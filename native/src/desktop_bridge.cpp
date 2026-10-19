@@ -223,13 +223,17 @@ bool DesktopBridge::set_window_taskbar_visible(int64_t handle, bool visible) con
     if (previous == next) return true;
     // The shell caches taskbar membership: change the styles while hidden.
     const bool was_visible = IsWindowVisible(window);
+    const bool restore_focus = GetForegroundWindow() == window && !(previous & WS_EX_NOACTIVATE);
     if (was_visible) ShowWindow(window, SW_HIDE);
     SetLastError(0);
     const LONG_PTR result = SetWindowLongPtrW(window, GWL_EXSTYLE, next);
     const bool ok = result != 0 || GetLastError() == 0;
     SetWindowPos(window, nullptr, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-    if (was_visible) ShowWindow(window, SW_SHOWNOACTIVATE);
+    if (was_visible) {
+        ShowWindow(window, restore_focus ? SW_SHOW : SW_SHOWNOACTIVATE);
+        if (restore_focus) SetForegroundWindow(window);
+    }
     return ok;
 #else
     return true;

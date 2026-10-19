@@ -353,6 +353,7 @@ func _refresh_ui_theme() -> void:
 	if is_instance_valid(world_window): world_window.theme = Fonts.theme()
 
 func _set_window_taskbar(window: Window, show_in_taskbar: bool) -> void:
+	if not is_instance_valid(window) or window.is_queued_for_deletion() or not window.visible: return
 	if OS.get_name() == "macOS":
 		_sync_dock()
 		return
@@ -364,7 +365,7 @@ func _set_window_taskbar(window: Window, show_in_taskbar: bool) -> void:
 func _settings_visibility_changed() -> void:
 	if is_instance_valid(settings_window) and not settings_window.is_queued_for_deletion():
 		settings_window.process_mode = Node.PROCESS_MODE_INHERIT if settings_window.visible else Node.PROCESS_MODE_DISABLED
-		if settings_window.visible: _set_window_taskbar(settings_window, true)
+		if settings_window.visible: call_deferred("_set_window_taskbar", settings_window, true)
 	_sync_dock()
 
 func _sync_dock() -> void:
