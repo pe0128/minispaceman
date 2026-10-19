@@ -16,7 +16,7 @@ var _hint_time := 8.0
 var _paused_label: Label
 var _portal_material: ShaderMaterial
 
-func build(snapshot: Dictionary, start: Vector2) -> void:
+func build(snapshot: Dictionary, start: Vector2, art_scale: float = 2.0, smoke_style: String = "small") -> void:
 	world_size = snapshot["size"]
 	var background := TextureRect.new()
 	background.texture = ImageTexture.create_from_image(snapshot["image"])
@@ -33,12 +33,15 @@ func build(snapshot: Dictionary, start: Vector2) -> void:
 	_add_platform(Rect2(-32, -200, 32, world_size.y + 232), false)
 	_add_platform(Rect2(world_size.x, -200, 32, world_size.y + 232), false)
 	player = Player.new()
+	player.art_scale = art_scale
+	player.smoke_style = smoke_style
 	player.world = self
 	player.position = start
 	player.z_index = 2
 	add_child(player)
 	for index in range(3):
 		var item := Prop.new()
+		item.art_scale = art_scale
 		item.kind = ["cyan", "amber", "violet"][index]
 		item.position = Vector2(world_size.x * float(index + 1) / 4.0, world_size.y - 28)
 		item.z_index = 1

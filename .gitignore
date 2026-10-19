@@ -21,8 +21,6 @@ native/src/*.os
 native/src/*.o
 build/*
 !build/.gdignore
-artifacts/*
-!artifacts/.gdignore
 *.pdb
 *.exp
 *.lib

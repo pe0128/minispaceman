@@ -5,14 +5,17 @@ env = SConscript("godot-cpp/SConstruct")
 env.Append(CPPPATH=["src"])
 env["SHLIBPREFIX"] = ""
 if env["platform"] == "windows":
-    env.Append(LIBS=["user32", "dwmapi"])
+    env.Append(LIBS=["user32", "dwmapi", "advapi32"])
 elif env["platform"] == "macos":
     # godot-cpp supplies a custom link command; FRAMEWORKS alone is not
     # expanded by that command. Pass the Apple frameworks explicitly.
-    env.Append(LINKFLAGS=["-framework", "CoreGraphics", "-framework", "CoreFoundation"])
+    env.Append(LINKFLAGS=["-framework", "CoreGraphics", "-framework", "CoreFoundation", "-framework", "Foundation", "-framework", "ServiceManagement"])
     env.Append(CCFLAGS=["-mmacosx-version-min=13.0"])
 else:
     Exit("Only Windows and macOS are supported")
 suffix = env["suffix"]
-library = env.SharedLibrary("bin/minispaceman" + suffix + env["SHLIBSUFFIX"], Glob("src/*.cpp"))
+sources = Glob("src/*.cpp")
+if env["platform"] == "macos":
+    sources += Glob("src/*.mm")
+library = env.SharedLibrary("bin/minispaceman" + suffix + env["SHLIBSUFFIX"], sources)
 Default(library)

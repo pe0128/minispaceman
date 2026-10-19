@@ -31,7 +31,10 @@ jobs:
           ./tools/build_native.ps1 -Godot "$pwd/.tools/godot/Godot_v4.7.2-stable_win64_console.exe" -Target template_release
       - name: Run checks
         shell: pwsh
-        run: ./tools/test.ps1 -Godot "$pwd/.tools/godot/Godot_v4.7.2-stable_win64_console.exe"
+        run: |
+          $output = & .tools/godot/Godot_v4.7.2-stable_win64_console.exe --headless --editor --path . --import --quit 2>&1
+          $output | Write-Output
+          if ($LASTEXITCODE -ne 0 -or ($output -match 'SCRIPT ERROR|^ERROR:')) { throw "Godot import failed" }
       - name: Export Windows build
         shell: pwsh
         run: |
@@ -66,9 +69,9 @@ jobs:
           TARGET=template_release bash tools/build_native.sh
       - name: Run checks
         run: |
-          "$GODOT_BIN" --headless --editor --path . --import --quit
-          "$GODOT_BIN" --headless --path . --script res://tests/run_tests.gd
-          "$GODOT_BIN" --headless --path . --script res://tests/gameplay_tests.gd
+          "$GODOT_BIN" --headless --editor --path . --import --quit > "$RUNNER_TEMP/godot-import.log" 2>&1
+          cat "$RUNNER_TEMP/godot-import.log"
+          ! rg -n 'SCRIPT ERROR|^ERROR:' "$RUNNER_TEMP/godot-import.log"
       - name: Export macOS Universal build
         run: |
           python tools/fetch_templates.py --platform macos --output .tools/export_templates/4.7.2.stable

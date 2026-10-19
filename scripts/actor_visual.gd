@@ -2,6 +2,10 @@ extends Node2D
 
 const Assets = preload("res://scripts/assets.gd")
 const Config = preload("res://scripts/config.gd")
+const Jet = preload("res://scripts/jet_effect.gd")
+var art_scale := Config.ART_SCALE
+var smoke_style := "small"
+var _jet: Node2D
 var animation_name := "idle"
 var frame := 0
 var elapsed := 0.0
@@ -16,8 +20,12 @@ var _clock := 0.0
 var _glove: Texture2D
 
 func _ready() -> void:
-	scale = Vector2.ONE * Config.ART_SCALE
+	scale = Vector2.ONE * art_scale
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_jet = Jet.new()
+	_jet.position = Vector2(-12, 1)
+	_jet.show_behind_parent = true
+	add_child(_jet)
 	# The authored sampling mask omits the two bright glove pixels.
 	var source := Assets.texture("parts/glove.png").get_image()
 	var image := Image.create(6, 5, false, Image.FORMAT_RGBA8)
@@ -33,6 +41,9 @@ func play(action: String) -> void:
 	elapsed = 0.0
 
 func _process(delta: float) -> void:
+	_jet.emitting = jetting and not assembled
+	_jet.style = smoke_style
+	_jet.position.x = -12 * facing
 	_clock += delta
 	recoil = move_toward(recoil, 0.0, delta * 22.0)
 	var data := Assets.animation(animation_name)
@@ -115,10 +126,6 @@ func _draw() -> void:
 	# Aim above the helmet must remain behind the authored helmet/collar spans.
 	# Runtime clipping is applied to the arm overlay in _draw_primary_masked().
 	_draw_primary_masked(_shoulder(), elbow, grip, direction)
-	if jetting:
-		_transform_at(Vector2(-12, 1))
-		var jet_frame := int(_clock * 12) % 6
-		draw_texture_rect_region(Assets.texture("effects/jet-small/sheet.png"), Rect2(-16, 0, 32, 32), Rect2(jet_frame * 32, 0, 32, 32))
 	draw_set_transform(Vector2.ZERO)
 
 func _draw_primary_masked(shoulder: Vector2, elbow: Vector2, grip: Vector2, direction: Vector2) -> void:

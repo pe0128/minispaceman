@@ -4,6 +4,8 @@ const Config = preload("res://scripts/config.gd")
 const Visual = preload("res://scripts/actor_visual.gd")
 const Flight = preload("res://scripts/flight.gd")
 const Assets = preload("res://scripts/assets.gd")
+var art_scale := Config.ART_SCALE
+var smoke_style := "small"
 var visual: Node2D
 var flight := Flight.new()
 var enabled := false
@@ -23,11 +25,13 @@ func _ready() -> void:
 	floor_snap_length = 5
 	_collider = CollisionShape2D.new()
 	var shape := RectangleShape2D.new()
-	shape.size = Vector2(32, 82)
+	shape.size = Vector2(32, 82) * art_scale / 2
 	_collider.shape = shape
-	_collider.position = Vector2(0, -9)
+	_collider.position = Vector2(0, -9) * art_scale / 2
 	add_child(_collider)
 	visual = Visual.new()
+	visual.art_scale = art_scale
+	visual.smoke_style = smoke_style
 	add_child(visual)
 
 func clear_controls() -> void:
@@ -64,12 +68,12 @@ func _physics_process(delta: float) -> void:
 	var axis := Input.get_axis("move_left", "move_right")
 	velocity.x = move_toward(velocity.x, axis * (Config.CROUCH_SPEED if down and grounded else Config.MOVE_SPEED), 1600.0 * delta)
 	var box := _collider.shape as RectangleShape2D
-	box.size.y = 54.0 if down and grounded else 82.0
-	_collider.position.y = 32.0 - box.size.y * 0.5
+	box.size.y = (54.0 if down and grounded else 82.0) * art_scale / 2
+	_collider.position.y = 16.0 * art_scale - box.size.y * 0.5
 	move_and_slide()
-	position.x = clampf(position.x, 34, world.world_size.x - 34)
-	position.y = maxf(position.y, 54)
-	if position.y <= 54 and velocity.y < 0:
+	position.x = clampf(position.x, 17 * art_scale, world.world_size.x - 17 * art_scale)
+	position.y = maxf(position.y, 27 * art_scale)
+	if position.y <= 27 * art_scale and velocity.y < 0:
 		velocity.y = 0
 	if position.y > world.world_size.y + 100:
 		position.y = world.world_size.y - 40
@@ -111,7 +115,7 @@ func _pickup() -> void:
 	if is_instance_valid(held_item):
 		return
 	var nearest: RigidBody2D
-	var best := Config.PICKUP_RADIUS * Config.PICKUP_RADIUS
+	var best := pow(Config.PICKUP_RADIUS * art_scale / 2, 2)
 	for item: RigidBody2D in world.props:
 		if not is_instance_valid(item) or item.held:
 			continue
@@ -133,7 +137,7 @@ func _update_throw(delta: float) -> void:
 		visual.frame = 3
 		var palm: Vector2 = visual.to_global(visual.palm_local())
 		var anchor: Vector2 = Assets.prop_anchor(held_item.kind) - held_item.sprite.texture.get_size() * 0.5
-		var center: Vector2 = palm - anchor * Config.ART_SCALE * Vector2(visual.facing, 1)
+		var center: Vector2 = palm - anchor * art_scale * Vector2(visual.facing, 1)
 		held_item.release(center, visual.aim * Config.THROW_SPEED + velocity)
 		held_item = null
 		visual.carrying = ""

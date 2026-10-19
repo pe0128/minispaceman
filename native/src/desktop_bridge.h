@@ -11,5 +11,9 @@ public:
     Dictionary snapshot_windows() const;
     bool screen_capture_allowed() const;
     bool request_screen_capture() const;
+    Dictionary autostart_status(const String &executable) const;
+    Dictionary set_autostart(bool enabled, const String &executable) const;
+    void open_login_settings() const;
+    bool claim_instance() const;
 };
 }

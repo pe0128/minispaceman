@@ -29,8 +29,18 @@ Windows 排除本进程、最小化、隐藏、DWM cloaked、工具和桌面壳�
 - 普通模式 30 FPS，游戏目标 60 FPS，实际功耗与性能需要在目标设备测量。
 - 开发构建使用临时签名；公开证书、商店发布、自动更新和公开 Release 不在本次实现范围内。
 
-## 验证
+## 设置与扩展
 
-`tests/run_tests.gd` 验证坐标、遮挡裁剪和飞行状态；`tests/gameplay_tests.gd` 验证实际物理、拾取投掷和子弹冲量。`--smoke-test` 使用合成背景输出画面并检查退出坐标；`--integration-test` 读取真实屏幕，连续切换 50 次。
+`settings_store.gd` 集中维护默认值、校验、配置版本和 changed 信号。配置先写临时文件，更新系统登录项后原子替换正式文件；失败保留草稿并尝试回滚系统状态。位置存储与配置分离。
 
-Windows 可运行 `tools/test.ps1 -Visual`。Mac 使用匹配 Godot 运行同样的 headless 脚本，再在真实桌面授权后执行图形测试。
+`settings_window.gd` 的 CATEGORIES 注册分类，独立页面继承 `settings_page.gd`。新增设置时，在 Store 的默认值和校验中加入字段，在对应页面绑定草稿，并在应用控制器响应 changed。整个窗口共享一份草稿，不因切页而丢失修改。`settings_theme.gd` 集中维护颜色、字体、交互状态和系统主题响应。
+
+尺寸采用素材倍率 1/2/3/4，对应 50/100/150/200%。普通窗口、透明命中区域、角色视觉、碰撞体、持物和道具共用倍率；脚下屏幕坐标在改变尺寸时保持不变，屏幕边缘会做可见范围校正。速度、重力、跳跃和喷气推力保持原值。
+
+`jet_effect.gd` 从素材 manifest 读取三档效果：小号循环播放，中、大号按各自 interval/life/speed/spreadSpeed/maxScale/burst 发射独立气团。气团位置在出生时固定到全局坐标，角色移动不会带走已发出的烟雾；数量限制为 64。
+
+Windows 自启动读写 HKCU Run 并对可执行文件路径加引号。macOS Objective-C++ 通过 ServiceManagement 查询/注册/注销主应用登录项，区分 requiresApproval 并提供系统设置入口。编辑器中禁用注册。Windows 命名互斥体、macOS 当前用户文件锁阻止重复实例，进程退出后系统释放锁。
+
+## 构建检查
+
+项目不再保留测试专用代码或输出。CI 使用 Godot 导入、原生 debug/release 编译及 Windows/macOS 导出检查。设置交互、登录项权限、显示器 DPI 与窗口行为仍应在目标系统验收。

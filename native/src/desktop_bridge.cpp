@@ -15,6 +15,7 @@
 #include <CoreGraphics/CoreGraphics.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <unistd.h>
+#include "platform_macos.h"
 #endif
 
 using namespace godot;
@@ -23,6 +24,10 @@ void DesktopBridge::_bind_methods() {
     ClassDB::bind_method(D_METHOD("snapshot_windows"), &DesktopBridge::snapshot_windows);
     ClassDB::bind_method(D_METHOD("screen_capture_allowed"), &DesktopBridge::screen_capture_allowed);
     ClassDB::bind_method(D_METHOD("request_screen_capture"), &DesktopBridge::request_screen_capture);
+    ClassDB::bind_method(D_METHOD("autostart_status", "executable"), &DesktopBridge::autostart_status);
+    ClassDB::bind_method(D_METHOD("set_autostart", "enabled", "executable"), &DesktopBridge::set_autostart);
+    ClassDB::bind_method(D_METHOD("open_login_settings"), &DesktopBridge::open_login_settings);
+    ClassDB::bind_method(D_METHOD("claim_instance"), &DesktopBridge::claim_instance);
 }
 
 #ifdef _WIN32
@@ -123,6 +128,83 @@ bool DesktopBridge::request_screen_capture() const {
 #ifdef __APPLE__
     return CGRequestScreenCaptureAccess();
 #else
+    return true;
+#endif
+}
+
+#ifdef _WIN32
+static constexpr const wchar_t *RUN_KEY = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+static constexpr const wchar_t *RUN_NAME = L"minispaceman";
+#endif
+
+Dictionary DesktopBridge::autostart_status(const String &executable) const {
+#ifdef __APPLE__
+    return mac_login_status();
+#else
+    Dictionary result;
+    HKEY key = nullptr;
+    const LSTATUS opened = RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_QUERY_VALUE, &key);
+    if (opened == ERROR_FILE_NOT_FOUND) { result["state"] = "notRegistered"; return result; }
+    if (opened != ERROR_SUCCESS) { result["state"] = "unavailable"; result["message"] = "无法读取系统登录项。"; return result; }
+    wchar_t command[32768]{};
+    DWORD bytes = sizeof(command), type = 0;
+    const LSTATUS read = RegQueryValueExW(key, RUN_NAME, nullptr, &type, reinterpret_cast<BYTE *>(command), &bytes);
+    RegCloseKey(key);
+    const String expected = "\"" + executable.replace("/", "\\") + "\"";
+    if (read == ERROR_FILE_NOT_FOUND) result["state"] = "notRegistered";
+    else if (read != ERROR_SUCCESS || type != REG_SZ) {
+        result["state"] = "unavailable"; result["message"] = "系统登录项无法读取。";
+    } else result["state"] = String(command) == expected ? "enabled" : "notFound";
+    return result;
+#endif
+}
+
+Dictionary DesktopBridge::set_autostart(bool enabled, const String &executable) const {
+#ifdef __APPLE__
+    return mac_set_login(enabled);
+#else
+    Dictionary result;
+    HKEY key = nullptr;
+    LSTATUS status = RegCreateKeyExW(HKEY_CURRENT_USER, RUN_KEY, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr);
+    if (status == ERROR_SUCCESS) {
+        if (enabled) {
+            const String command = "\"" + executable.replace("/", "\\") + "\"";
+            const auto utf16 = command.utf16();
+            status = RegSetValueExW(key, RUN_NAME, 0, REG_SZ, reinterpret_cast<const BYTE *>(utf16.get_data()), (utf16.length() + 1) * sizeof(wchar_t));
+        } else {
+            status = RegDeleteValueW(key, RUN_NAME);
+            if (status == ERROR_FILE_NOT_FOUND) status = ERROR_SUCCESS;
+        }
+        RegCloseKey(key);
+    }
+    result["ok"] = status == ERROR_SUCCESS;
+    if (status != ERROR_SUCCESS) result["message"] = "无法更改系统登录项，错误码：" + String::num_int64(status);
+    return result;
+#endif
+}
+
+void DesktopBridge::open_login_settings() const {
+#ifdef __APPLE__
+    mac_open_login_settings();
+#endif
+}
+
+bool DesktopBridge::claim_instance() const {
+#ifdef __APPLE__
+    return mac_claim_instance();
+#else
+    static HANDLE instance = nullptr;
+    if (instance) return true;
+    wchar_t username[256]{};
+    DWORD length = 256;
+    if (!GetUserNameW(username, &length)) return false;
+    const String name = String("Local\\minispaceman.Instance.") + String(username);
+    const auto utf16 = name.utf16();
+    HANDLE candidate = CreateMutexW(nullptr, FALSE, reinterpret_cast<const wchar_t *>(utf16.get_data()));
+    const DWORD error = GetLastError();
+    if (!candidate) return false;
+    if (error == ERROR_ALREADY_EXISTS) { CloseHandle(candidate); return false; }
+    instance = candidate;
     return true;
 #endif
 }
