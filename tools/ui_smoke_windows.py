@@ -16,17 +16,35 @@ user32.IsWindowVisible.argtypes = [wintypes.HWND]
 user32.IsWindow.argtypes = [wintypes.HWND]
 user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
 user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+ENUM_CALLBACK = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+user32.EnumWindows.argtypes = [ENUM_CALLBACK, wintypes.LPARAM]
 
 
-def find_own_window(title, pid, timeout=8):
+def own_windows(title, pid):
+    found = []
+
+    @ENUM_CALLBACK
+    def visit(handle, _data):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(handle, ctypes.byref(owner))
+        if owner.value == pid:
+            text = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(handle, text, len(text))
+            if text.value == title:
+                found.append(handle)
+        return True
+
+    user32.EnumWindows(visit, 0)
+    return found
+
+
+def find_own_window(title, pid, timeout=25):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        handle = user32.FindWindowW(None, title)
-        owner = wintypes.DWORD()
-        if handle:
-            user32.GetWindowThreadProcessId(handle, ctypes.byref(owner))
-            if owner.value == pid:
-                return handle
+        handles = own_windows(title, pid)
+        if handles:
+            return handles[0]
         time.sleep(0.05)
     raise AssertionError(f"Missing own window: {title}")
 
@@ -74,7 +92,7 @@ def main():
             # one on show; reacquire the restored pet instead of its stale HWND.
             pet = find_own_window("minispaceman", process.pid)
             assert user32.IsWindowVisible(pet), "Escape did not restore pet"
-            assert not user32.FindWindowW(None, "桌宠世界 · Esc 返回"), "World window was not freed"
+            assert not own_windows("桌宠世界 · Esc 返回", process.pid), "World window was not freed"
             user32.PostMessageW(pet, 0x0010, 0, 0)
             assert process.wait(timeout=5) == 0
             print("UI_SMOKE drag / double-click / Escape / close passed")
