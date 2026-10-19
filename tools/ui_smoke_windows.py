@@ -14,6 +14,8 @@ user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, w
 user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
 user32.IsWindowVisible.argtypes = [wintypes.HWND]
 user32.IsWindow.argtypes = [wintypes.HWND]
+user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
 
 
 def find_own_window(title, pid, timeout=8):
@@ -43,6 +45,23 @@ def main():
         process = subprocess.Popen(command, cwd=executable.parent, stdout=log, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW)
         try:
             pet = find_own_window("minispaceman", process.pid)
+            original_cursor = wintypes.POINT()
+            user32.GetCursorPos(ctypes.byref(original_cursor))
+            old_rect = wintypes.RECT()
+            user32.GetWindowRect(pet, ctypes.byref(old_rect))
+            try:
+                user32.SetCursorPos(old_rect.left + 96, old_rect.top + 105)
+                time.sleep(0.1)
+                user32.PostMessageW(pet, 0x0201, 1, (105 << 16) | 96)
+                time.sleep(0.1)
+                user32.SetCursorPos(old_rect.left + 16, old_rect.top + 55)
+                time.sleep(0.3)
+                user32.PostMessageW(pet, 0x0202, 0, (105 << 16) | 96)
+                new_rect = wintypes.RECT()
+                user32.GetWindowRect(pet, ctypes.byref(new_rect))
+                assert new_rect.left < old_rect.left - 40 and new_rect.top < old_rect.top - 20, "Dragging did not move the pet"
+            finally:
+                user32.SetCursorPos(original_cursor.x, original_cursor.y)
             point = (105 << 16) | 96
             user32.PostMessageW(pet, 0x0203, 1, point)
             user32.PostMessageW(pet, 0x0202, 0, point)
@@ -58,7 +77,7 @@ def main():
             assert not user32.FindWindowW(None, "桌宠世界 · Esc 返回"), "World window was not freed"
             user32.PostMessageW(pet, 0x0010, 0, 0)
             assert process.wait(timeout=5) == 0
-            print("UI_SMOKE double-click / Escape / close passed")
+            print("UI_SMOKE drag / double-click / Escape / close passed")
         finally:
             if process.poll() is None:
                 process.terminate()

@@ -7,7 +7,9 @@ env["SHLIBPREFIX"] = ""
 if env["platform"] == "windows":
     env.Append(LIBS=["user32", "dwmapi"])
 elif env["platform"] == "macos":
-    env.Append(FRAMEWORKS=["CoreGraphics", "CoreFoundation"])
+    # godot-cpp supplies a custom link command; FRAMEWORKS alone is not
+    # expanded by that command. Pass the Apple frameworks explicitly.
+    env.Append(LINKFLAGS=["-framework", "CoreGraphics", "-framework", "CoreFoundation"])
     env.Append(CCFLAGS=["-mmacosx-version-min=13.0"])
 else:
     Exit("Only Windows and macOS are supported")
