@@ -41,6 +41,8 @@ var _tray_menu: PopupMenu
 var _resident: Node
 var _enabled := true
 var _startup := false
+var _font_warning_shown := false
+var _entry_generation := 0
 
 func _ready() -> void:
 	# Configure the default before any child native windows are created.
@@ -154,6 +156,7 @@ func _set_enabled(enabled: bool) -> void:
 	_drag_candidate = false
 	_dragging = false
 	if not enabled:
+		_entry_generation += 1
 		if is_instance_valid(world): leave_world()
 		_save_position()
 		pet.hide()
@@ -208,6 +211,8 @@ func _pet_input(event: InputEvent) -> void:
 func enter_world() -> void:
 	if mode != Mode.PET:
 		return
+	_entry_generation += 1
+	var generation := _entry_generation
 	if is_instance_valid(settings_window):
 		settings_window.suspend()
 	mode = Mode.ENTERING
@@ -221,7 +226,7 @@ func enter_world() -> void:
 	pet.hide()
 	await get_tree().process_frame
 	await get_tree().process_frame
-	if not _enabled or _quitting: return
+	if not _enabled or _quitting or generation != _entry_generation: return
 	var snapshot: Dictionary = desktop.capture_desktop(screen_id)
 	if snapshot.has("error"):
 		pet.show()
@@ -395,6 +400,10 @@ func _quit() -> void:
 	get_tree().quit()
 
 func _open_settings() -> void:
+	if not _font_warning_shown:
+		_font_warning_shown = true
+		var missing := Fonts.missing_fonts()
+		if not missing.is_empty(): call_deferred("_show_error", "请安装字体：" + "、".join(missing))
 	if is_instance_valid(settings_window):
 		settings_window.show()
 		_set_window_taskbar(settings_window, true)
