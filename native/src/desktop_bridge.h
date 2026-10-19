@@ -15,6 +15,8 @@ public:
     Dictionary set_autostart(bool enabled, const String &executable) const;
     void open_login_settings() const;
     bool claim_instance() const;
+    bool launched_at_login() const;
+    bool consume_reopen() const;
     bool set_window_taskbar_visible(int64_t handle, bool visible) const;
     bool set_app_dock_visible(bool visible) const;
 };

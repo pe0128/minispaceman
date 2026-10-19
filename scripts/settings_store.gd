@@ -5,9 +5,27 @@ signal changed(previous: Dictionary)
 const DEFAULTS := {"astronaut": {"size": 100, "smoke": "small"}, "app": {
 	"autostart": false, "always_on_top": true, "remember_position": true, "theme": "system"}}
 const PATH := "user://settings.cfg"
-const VERSION := 1
+const VERSION := 2
 var values: Dictionary = DEFAULTS.duplicate(true)
 var bridge: Object
+var registration_error := ""
+
+func ensure_resident_login() -> void:
+	if OS.has_feature("editor") or bridge == null: return
+	# A separate marker prevents a later OS disable from being silently undone.
+	var marker := ConfigFile.new()
+	var path := "user://resident_login.cfg"
+	marker.load(path)
+	var executable := OS.get_executable_path()
+	if marker.get_value("login", "attempted", "") == executable: return
+	marker.set_value("login", "attempted", executable)
+	if marker.save(path) != OK:
+		registration_error = "无法保存登录项状态。"
+		return
+	var status := login_status()
+	if status.state in ["enabled", "requiresApproval", "disabled"]: return
+	var result: Dictionary = bridge.set_autostart(true, executable)
+	if not result.get("ok", false): registration_error = result.get("message", "无法注册系统登录项。")
 
 func _init(native_bridge: Object = null) -> void:
 	bridge = native_bridge
@@ -32,6 +50,7 @@ func validate(draft: Dictionary) -> String:
 	return ""
 
 func login_status() -> Dictionary:
+	if not registration_error.is_empty(): return {"state": "unavailable", "message": registration_error}
 	if OS.has_feature("editor") or bridge == null:
 		return {"state": "unavailable", "message": "开机自启动需要使用导出的应用。"}
 	return bridge.autostart_status(OS.get_executable_path())
@@ -39,28 +58,16 @@ func login_status() -> Dictionary:
 func apply(draft: Dictionary) -> String:
 	var error := validate(draft)
 	if not error.is_empty(): return error
-	var status := login_status()
-	var requested: bool = draft.app.autostart
-	var registered: bool = status.state in ["enabled", "requiresApproval"]
-	var alter_login: bool = status.state != "unavailable" and (
-		(requested and not registered) or (not requested and status.state in ["enabled", "requiresApproval", "notFound"]))
-	if requested != values.app.autostart and status.state == "unavailable": return status.message
-	# Prepare the complete file before changing OS state; publish atomically afterwards.
+	# Login registration is independent of whether the pet starts enabled.
 	var file := ConfigFile.new()
 	file.set_value("meta", "version", VERSION)
 	for section: String in DEFAULTS:
 		for key: String in DEFAULTS[section]: file.set_value(section, key, draft[section][key])
 	if file.save(PATH + ".pending") != OK: return "无法写入配置，请检查用户目录权限。"
-	if alter_login:
-		var result: Dictionary = bridge.set_autostart(requested, OS.get_executable_path())
-		if not result.get("ok", false):
-			DirAccess.remove_absolute(PATH + ".pending")
-			return result.get("message", "无法更改系统登录项。")
 	var rename_error := DirAccess.rename_absolute(PATH + ".pending", PATH)
 	if rename_error != OK:
 		DirAccess.remove_absolute(PATH + ".pending")
-		if alter_login: bridge.set_autostart(registered, OS.get_executable_path())
-		return "无法保存配置，系统登录项已尝试恢复。请重试。"
+		return "无法保存配置，请重试。"
 	var previous := values.duplicate(true)
 	values = draft.duplicate(true)
 	changed.emit(previous)

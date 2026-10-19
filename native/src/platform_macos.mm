@@ -4,11 +4,64 @@
 #import <Foundation/Foundation.h>
 #import <ServiceManagement/ServiceManagement.h>
 #import <AppKit/AppKit.h>
+#import <CoreServices/CoreServices.h>
+#import <objc/runtime.h>
 #include <sys/file.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string>
 
 using namespace godot;
+
+namespace {
+bool login_launch = false;
+bool reopen_requested = false;
+id launch_observer = nil;
+IMP previous_reopen = nullptr;
+Class delegate_class = Nil;
+std::string reopen_encoding;
+
+void capture_launch_event() {
+    NSAppleEventDescriptor *event = [[NSAppleEventManager sharedAppleEventManager] currentAppleEvent];
+    if (event.eventID == kAEOpenApplication &&
+        [[event paramDescriptorForKeyword:keyAEPropData] enumCodeValue] == keyAELaunchedAsLogInItem) login_launch = true;
+}
+
+BOOL handle_reopen(id delegate, SEL selector, NSApplication *application, BOOL visible) {
+    reopen_requested = true;
+    if (previous_reopen) return reinterpret_cast<BOOL (*)(id, SEL, NSApplication *, BOOL)>(previous_reopen)(delegate, selector, application, visible);
+    return YES;
+}
+}
+
+void mac_initialize_lifecycle() {
+    // Godot starts the extension inside applicationDidFinishLaunching. Cache
+    // the Apple event before a later event replaces currentAppleEvent.
+    capture_launch_event();
+    launch_observer = [[NSNotificationCenter defaultCenter] addObserverForName:NSApplicationDidFinishLaunchingNotification object:nil queue:nil usingBlock:^(NSNotification *) { capture_launch_event(); }];
+    if (![[[NSBundle mainBundle] bundleIdentifier] isEqualToString:@"io.github.pe0128.minispaceman"]) return;
+    delegate_class = object_getClass([NSApp delegate]);
+    if (!delegate_class) return;
+    SEL selector = @selector(applicationShouldHandleReopen:hasVisibleWindows:);
+    Method existing = class_getInstanceMethod(delegate_class, selector);
+    if (existing) previous_reopen = method_getImplementation(existing);
+    reopen_encoding = std::string(@encode(BOOL)) + "@:@" + @encode(BOOL);
+    if (existing) reopen_encoding = method_getTypeEncoding(existing);
+    class_replaceMethod(delegate_class, selector, reinterpret_cast<IMP>(handle_reopen), reopen_encoding.c_str());
+}
+
+void mac_terminate_lifecycle() {
+    if (launch_observer) [[NSNotificationCenter defaultCenter] removeObserver:launch_observer];
+    launch_observer = nil;
+    if (delegate_class && previous_reopen) class_replaceMethod(delegate_class, @selector(applicationShouldHandleReopen:hasVisibleWindows:), previous_reopen, reopen_encoding.c_str());
+}
+
+bool mac_launched_at_login() { return login_launch; }
+bool mac_consume_reopen() {
+    const bool result = reopen_requested;
+    reopen_requested = false;
+    return result;
+}
 
 Dictionary mac_login_status() {
     @autoreleasepool {

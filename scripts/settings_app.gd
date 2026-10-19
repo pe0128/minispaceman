@@ -6,9 +6,8 @@ var _login_button: Button
 
 func _ready() -> void:
 	label("应用", 28)
-	var startup := toggle("开机自启动", draft.app.autostart,
+	toggle("开机自启动", draft.app.autostart,
 		func(value: bool): draft.app.autostart = value; edited.emit())
-	startup.disabled = OS.has_feature("editor") or store.bridge == null
 	_status = label("", 13)
 	_login_button = Button.new()
 	_login_button.text = "打开系统登录项设置…"
@@ -26,10 +25,11 @@ func _ready() -> void:
 
 func refresh_status() -> void:
 	var status: Dictionary = store.login_status()
-	_status.visible = status.state in ["requiresApproval", "notFound", "unavailable"]
+	_status.visible = status.state in ["requiresApproval", "notFound", "unavailable", "notRegistered", "disabled"]
 	match status.state:
 		"requiresApproval": _status.text = "需要在系统设置中允许自启动。"
-		"notFound": _status.text = "找不到登录项中的应用，请重新设置自启动。"
+		"notFound": _status.text = "登录项指向其他位置。"
+		"notRegistered", "disabled": _status.text = "系统登录项未启用。"
 		"unavailable": _status.text = status.get("message", "无法读取登录项。")
 		_: _status.text = ""
-	_login_button.visible = status.state == "requiresApproval"
+	_login_button.visible = not OS.has_feature("editor") and status.state in ["requiresApproval", "disabled", "notRegistered", "notFound"]

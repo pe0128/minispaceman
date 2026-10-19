@@ -9,10 +9,14 @@ const SettingsStore = preload("res://scripts/settings_store.gd")
 const SettingsWindow = preload("res://scripts/settings_window.gd")
 const Fonts = preload("res://scripts/ui_fonts.gd")
 const Style = preload("res://scripts/settings_theme.gd")
+const Resident = preload("res://scripts/resident_service.gd")
+const APP_ICON = preload("res://assets/icons/app.png")
+const TRAY_ICON = preload("res://assets/icons/tray.png")
+const TRAY_DISABLED = preload("res://assets/icons/tray_disabled.png")
 var pet_anchor := Vector2(96, 120)
 var settings: RefCounted
 var settings_window: Window
-enum Mode { PET, ENTERING, WORLD, PAUSED, EXITING }
+enum Mode { PET, ENTERING, WORLD, PAUSED, EXITING, INACTIVE }
 var mode := Mode.PET
 var pet: Window
 var visual: Node2D
@@ -32,13 +36,31 @@ var _menu: PopupMenu
 var _dialog: AcceptDialog
 var _quitting := false
 var _last_size := Vector2i.ZERO
+var _tray_id := -1
+var _tray_menu: PopupMenu
+var _resident: Node
+var _enabled := true
+var _startup := false
 
 func _ready() -> void:
+	# Configure the default before any child native windows are created.
+	DisplayServer.set_icon(APP_ICON.get_image())
+	get_window().size = Vector2i.ONE
+	get_window().position = Vector2i(-32000, -32000)
+	_startup = "--startup" in OS.get_cmdline_user_args()
+	if desktop.bridge != null and OS.get_name() == "macOS":
+		_startup = desktop.bridge.launched_at_login()
+	_resident = Resident.new()
+	add_child(_resident)
 	if desktop.bridge != null and not desktop.bridge.claim_instance():
+		if not _startup: await _resident.wake_existing()
 		set_process(false)
 		get_tree().quit()
 		return
+	var ipc_error: int = _resident.start()
+	_resident.activated.connect(func(): _set_enabled(true))
 	settings = SettingsStore.new(desktop.bridge)
+	settings.ensure_resident_login()
 	settings.changed.connect(_settings_changed)
 	pet_anchor = Config.ROOT * settings.art_scale()
 	Config.setup_input()
@@ -80,7 +102,11 @@ func _ready() -> void:
 	pet.add_child(visual)
 	_set_hit_region()
 	_restore_position()
-	pet.show()
+	_enabled = not _startup or settings.values.app.autostart
+	if _enabled: pet.show()
+	else:
+		mode = Mode.INACTIVE
+		pet.process_mode = Node.PROCESS_MODE_DISABLED
 	_set_window_taskbar(pet, false)
 	pet.window_input.connect(_pet_input)
 	pet.close_requested.connect(_quit)
@@ -92,13 +118,60 @@ func _ready() -> void:
 		if id == 2: _open_settings()
 		else: _quit())
 	pet.add_child(_menu)
+	_tray_menu = PopupMenu.new()
+	_tray_menu.prefer_native_menu = false
+	_tray_menu.add_item("停用桌宠", 0)
+	_tray_menu.add_item("设置", 2)
+	_tray_menu.add_separator()
+	_tray_menu.add_item("退出", 1)
+	_tray_menu.id_pressed.connect(func(id: int):
+		if id == 0: _set_enabled(not _enabled)
+		elif id == 2: _open_settings()
+		else: _quit())
+	_tray_menu.visibility_changed.connect(_update_refresh_rate)
+	add_child(_tray_menu)
 	_dialog = AcceptDialog.new()
 	_dialog.title = "minispaceman"
-	pet.add_child(_dialog)
+	add_child(_dialog)
 	_refresh_ui_theme()
-	var missing := Fonts.missing_fonts()
-	if not missing.is_empty():
-		call_deferred("_show_error", "请安装字体：" + "、".join(missing))
+	_tray_id = DisplayServer.create_status_indicator(TRAY_ICON if _enabled else TRAY_DISABLED, "minispaceman", _tray_pressed)
+	if _tray_id < 0 or ipc_error != OK:
+		_open_settings()
+		_show_error("无法创建系统托盘。" if _tray_id < 0 else "无法建立本机唤醒通道。")
+	_update_refresh_rate()
+
+func _tray_pressed(button: int, position: Vector2i) -> void:
+	if button not in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]: return
+	_tray_menu.set_item_text(0, "停用桌宠" if _enabled else "启用桌宠")
+	_tray_menu.position = position
+	_tray_menu.popup()
+	_update_refresh_rate()
+
+func _set_enabled(enabled: bool) -> void:
+	if _quitting or not is_instance_valid(pet): return
+	if enabled == _enabled: return
+	_enabled = enabled
+	_drag_candidate = false
+	_dragging = false
+	if not enabled:
+		if is_instance_valid(world): leave_world()
+		_save_position()
+		pet.hide()
+		pet.process_mode = Node.PROCESS_MODE_DISABLED
+		mode = Mode.INACTIVE
+	else:
+		mode = Mode.PET
+		pet.process_mode = Node.PROCESS_MODE_INHERIT
+		_clamp_pet()
+		pet.show()
+		_set_window_taskbar(pet, false)
+	if _tray_id >= 0: DisplayServer.status_indicator_set_icon(_tray_id, TRAY_ICON if enabled else TRAY_DISABLED)
+	_update_refresh_rate()
+
+func _update_refresh_rate() -> void:
+	var settings_visible := is_instance_valid(settings_window) and not settings_window.is_queued_for_deletion() and settings_window.visible
+	var menu_visible := is_instance_valid(_tray_menu) and _tray_menu.visible
+	Engine.max_fps = 60 if is_instance_valid(world) else (30 if _enabled or settings_visible or menu_visible else 5)
 
 func _set_hit_region() -> void:
 	var image := Assets.texture("assembled/sheets/idle.png").get_image()
@@ -148,6 +221,7 @@ func enter_world() -> void:
 	pet.hide()
 	await get_tree().process_frame
 	await get_tree().process_frame
+	if not _enabled or _quitting: return
 	var snapshot: Dictionary = desktop.capture_desktop(screen_id)
 	if snapshot.has("error"):
 		pet.show()
@@ -229,6 +303,8 @@ func leave_world() -> void:
 	_save_position()
 
 func _process(delta: float) -> void:
+	if desktop.bridge != null and OS.get_name() == "macOS" and desktop.bridge.consume_reopen():
+		_set_enabled(true)
 	if mode == Mode.PET and _drag_candidate:
 		var distance := Vector2(DisplayServer.mouse_get_position()) - _drag_start
 		if distance.length() > 6:
@@ -312,6 +388,10 @@ func _quit() -> void:
 	if is_instance_valid(world):
 		leave_world()
 	_save_position()
+	if _tray_id >= 0:
+		DisplayServer.delete_status_indicator(_tray_id)
+		_tray_id = -1
+	_resident.stop()
 	get_tree().quit()
 
 func _open_settings() -> void:
@@ -329,6 +409,9 @@ func _open_settings() -> void:
 	settings_window.initial_screen = _screen_for_anchor(Vector2(pet.position) + pet_anchor)
 	settings_window.visibility_changed.connect(_settings_visibility_changed)
 	settings_window.tree_exiting.connect(_sync_dock)
+	settings_window.tree_exited.connect(func():
+		_update_refresh_rate()
+		if _tray_id < 0 and not _quitting: call_deferred("_quit"))
 	add_child(settings_window)
 
 func _settings_changed(_previous: Dictionary) -> void:
@@ -350,10 +433,13 @@ func _settings_changed(_previous: Dictionary) -> void:
 
 func _refresh_ui_theme() -> void:
 	pet.theme = Style.build(settings.values.app.theme)
+	if is_instance_valid(_tray_menu): _tray_menu.theme = pet.theme
+	if is_instance_valid(_dialog): _dialog.theme = pet.theme
 	if is_instance_valid(world_window): world_window.theme = Fonts.theme()
 
 func _set_window_taskbar(window: Window, show_in_taskbar: bool) -> void:
 	if not is_instance_valid(window) or window.is_queued_for_deletion() or not window.visible: return
+	DisplayServer.window_set_icon(APP_ICON.get_image(), window.get_window_id())
 	if OS.get_name() == "macOS":
 		_sync_dock()
 		return
@@ -367,6 +453,7 @@ func _settings_visibility_changed() -> void:
 		settings_window.process_mode = Node.PROCESS_MODE_INHERIT if settings_window.visible else Node.PROCESS_MODE_DISABLED
 		if settings_window.visible: call_deferred("_set_window_taskbar", settings_window, true)
 	_sync_dock()
+	_update_refresh_rate()
 
 func _sync_dock() -> void:
 	if OS.get_name() != "macOS" or desktop.bridge == null: return

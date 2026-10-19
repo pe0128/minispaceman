@@ -1,5 +1,6 @@
 #include "desktop_bridge.h"
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/classes/os.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/rect2.hpp>
 #include <godot_cpp/variant/vector2.hpp>
@@ -28,6 +29,8 @@ void DesktopBridge::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_autostart", "enabled", "executable"), &DesktopBridge::set_autostart);
     ClassDB::bind_method(D_METHOD("open_login_settings"), &DesktopBridge::open_login_settings);
     ClassDB::bind_method(D_METHOD("claim_instance"), &DesktopBridge::claim_instance);
+    ClassDB::bind_method(D_METHOD("launched_at_login"), &DesktopBridge::launched_at_login);
+    ClassDB::bind_method(D_METHOD("consume_reopen"), &DesktopBridge::consume_reopen);
     ClassDB::bind_method(D_METHOD("set_window_taskbar_visible", "handle", "visible"), &DesktopBridge::set_window_taskbar_visible);
     ClassDB::bind_method(D_METHOD("set_app_dock_visible", "visible"), &DesktopBridge::set_app_dock_visible);
 }
@@ -152,11 +155,20 @@ Dictionary DesktopBridge::autostart_status(const String &executable) const {
     DWORD bytes = sizeof(command), type = 0;
     const LSTATUS read = RegQueryValueExW(key, RUN_NAME, nullptr, &type, reinterpret_cast<BYTE *>(command), &bytes);
     RegCloseKey(key);
-    const String expected = "\"" + executable.replace("/", "\\") + "\"";
+    const String expected = "\"" + executable.replace("/", "\\") + "\" -- --startup";
     if (read == ERROR_FILE_NOT_FOUND) result["state"] = "notRegistered";
     else if (read != ERROR_SUCCESS || type != REG_SZ) {
         result["state"] = "unavailable"; result["message"] = "系统登录项无法读取。";
     } else result["state"] = String(command) == expected ? "enabled" : "notFound";
+    if (String(result["state"]) == "enabled") {
+        HKEY approval = nullptr;
+        if (RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run", 0, KEY_QUERY_VALUE, &approval) == ERROR_SUCCESS) {
+            BYTE data[64]{};
+            DWORD size = sizeof(data), kind = 0;
+            if (RegQueryValueExW(approval, RUN_NAME, nullptr, &kind, data, &size) == ERROR_SUCCESS && kind == REG_BINARY && size >= 1 && data[0] == 3) result["state"] = "disabled";
+            RegCloseKey(approval);
+        }
+    }
     return result;
 #endif
 }
@@ -170,7 +182,7 @@ Dictionary DesktopBridge::set_autostart(bool enabled, const String &executable) 
     LSTATUS status = RegCreateKeyExW(HKEY_CURRENT_USER, RUN_KEY, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr);
     if (status == ERROR_SUCCESS) {
         if (enabled) {
-            const String command = "\"" + executable.replace("/", "\\") + "\"";
+            const String command = "\"" + executable.replace("/", "\\") + "\" -- --startup";
             const auto utf16 = command.utf16();
             status = RegSetValueExW(key, RUN_NAME, 0, REG_SZ, reinterpret_cast<const BYTE *>(utf16.get_data()), (utf16.length() + 1) * sizeof(wchar_t));
         } else {
@@ -188,6 +200,24 @@ Dictionary DesktopBridge::set_autostart(bool enabled, const String &executable) 
 void DesktopBridge::open_login_settings() const {
 #ifdef __APPLE__
     mac_open_login_settings();
+#elif defined(_WIN32)
+    OS::get_singleton()->shell_open("ms-settings:startupapps");
+#endif
+}
+
+bool DesktopBridge::launched_at_login() const {
+#ifdef __APPLE__
+    return mac_launched_at_login();
+#else
+    return false;
+#endif
+}
+
+bool DesktopBridge::consume_reopen() const {
+#ifdef __APPLE__
+    return mac_consume_reopen();
+#else
+    return false;
 #endif
 }
 
