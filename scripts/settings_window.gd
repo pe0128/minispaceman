@@ -7,6 +7,7 @@ const CATEGORIES := [
 	{"id": "astronaut", "title": "宇航员", "page": preload("res://scripts/settings_astronaut.gd")},
 	{"id": "app", "title": "应用", "page": preload("res://scripts/settings_app.gd")}]
 var store: RefCounted
+var initial_screen := -1
 var draft: Dictionary
 var _category := 0
 var _root: PanelContainer
@@ -20,15 +21,16 @@ var _confirm: ConfirmationDialog
 var _close_after_apply := false
 
 func _ready() -> void:
-	title = "minispaceman · 设置"
+	title = "设置"
 	min_size = Vector2i(760, 540)
 	size = Vector2i(960, 680)
 	content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
-	content_scale_factor = maxf(1, DisplayServer.screen_get_scale(current_screen))
+	if initial_screen < 0: initial_screen = DisplayServer.get_primary_screen()
+	content_scale_factor = maxf(1, DisplayServer.screen_get_scale(initial_screen))
 	if OS.get_name() == "Windows":
-		content_scale_factor = maxf(1, DisplayServer.screen_get_dpi(current_screen) / 96.0)
+		content_scale_factor = maxf(1, DisplayServer.screen_get_dpi(initial_screen) / 96.0)
 	# Fit the available display while keeping the scrollable page usable.
-	var available := DisplayServer.screen_get_usable_rect(current_screen).size - Vector2i(48, 80)
+	var available := DisplayServer.screen_get_usable_rect(initial_screen).size - Vector2i(48, 80)
 	content_scale_factor = minf(content_scale_factor, maxf(1, minf(available.x / 760.0, available.y / 540.0)))
 	size = Vector2i(Vector2(size) * content_scale_factor)
 	min_size = Vector2i(Vector2(min_size) * content_scale_factor)
@@ -48,7 +50,7 @@ func _ready() -> void:
 	var nav := VBoxContainer.new()
 	_sidebar.add_child(nav)
 	var brand := Label.new()
-	brand.text = "MINISPACEMAN\n桌面上的太空伙伴"
+	brand.text = "minispaceman"
 	brand.add_theme_font_size_override("font_size", 14)
 	brand.custom_minimum_size.y = 84
 	nav.add_child(brand)
@@ -117,7 +119,8 @@ func _ready() -> void:
 	call_deferred("_present")
 
 func _present() -> void:
-	move_to_center()
+	var area := DisplayServer.screen_get_usable_rect(initial_screen)
+	position = area.position + (area.size - size) / 2
 	show()
 	grab_focus()
 

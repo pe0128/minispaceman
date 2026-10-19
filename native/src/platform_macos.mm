@@ -1,4 +1,6 @@
 #include "platform_macos.h"
+#include <godot_cpp/variant/variant.hpp>
+#include <godot_cpp/variant/string.hpp>
 #import <Foundation/Foundation.h>
 #import <ServiceManagement/ServiceManagement.h>
 #include <sys/file.h>

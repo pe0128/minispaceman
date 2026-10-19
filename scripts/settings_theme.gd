@@ -29,7 +29,7 @@ static func build(mode: String) -> Theme:
 	theme.set_type_variation("SettingsDescription", "Label")
 	theme.set_color("font_color", "SettingsDescription", p.muted)
 	for type: String in ["Label", "Button", "OptionButton", "CheckButton", "PopupMenu"]:
-		for key: String in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		for key: String in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
 			theme.set_color(key, type, p.text)
 		theme.set_color("font_disabled_color", type, p.muted)
 	for type: String in ["Button", "OptionButton", "CheckButton"]:

@@ -5,13 +5,13 @@ var actor: Node2D
 
 func _ready() -> void:
 	label("宇航员", 28)
-	label("调整你的太空伙伴，让它更贴合你的桌面。")
-	choice("宇航员大小", "普通桌宠与桌宠世界共用尺寸；应用时保持脚下位置。", ["50% · 迷你", "100% · 标准", "150% · 大", "200% · 特大"],
+	label("设置宇航员的大小和喷气效果。")
+	choice("宇航员大小", "普通桌宠与桌宠世界共用尺寸；应用时保持脚下位置。", ["50%", "100%（默认）", "150%", "200%"],
 		[50, 100, 150, 200].find(draft.astronaut.size), func(index: int):
 			draft.astronaut.size = [50, 100, 150, 200][index]
 			_refresh_preview()
 			edited.emit())
-	choice("喷气烟雾", "三套独立素材，仅改变视觉效果，飞行推力相同。", ["小 · 紧凑火焰", "中 · 轻盈烟雾", "大 · 扩散烟云"],
+	choice("喷气烟雾", "三套独立素材，仅改变视觉效果，飞行推力相同。", ["小", "中", "大"],
 		["small", "medium", "large"].find(draft.astronaut.smoke), func(index: int):
 			draft.astronaut.smoke = ["small", "medium", "large"][index]
 			_refresh_preview()

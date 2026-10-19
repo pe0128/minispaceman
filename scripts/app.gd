@@ -44,7 +44,7 @@ func _ready() -> void:
 	# Godot's main window cannot be hidden. Keep a transparent 1px host,
 	# and use two independently hideable native child windows instead.
 	var host := get_window()
-	host.title = "minispaceman host"
+	host.title = "minispaceman"
 	host.transparent_bg = true
 	host.transparent = true
 	host.unfocusable = true
@@ -155,7 +155,7 @@ func _start_world(snapshot: Dictionary, anchor: Vector2) -> void:
 	screen_size = snapshot["size"]
 	world_window = Window.new()
 	world_window.visible = false
-	world_window.title = "桌宠世界 · Esc 返回"
+	world_window.title = "桌宠世界"
 	world_window.force_native = true
 	world_window.borderless = true
 	world_window.unresizable = true
@@ -314,6 +314,7 @@ func _open_settings() -> void:
 	settings_window.visible = false
 	settings_window.force_native = true
 	settings_window.store = settings
+	settings_window.initial_screen = _screen_for_anchor(Vector2(pet.position) + pet_anchor)
 	add_child(settings_window)
 
 func _settings_changed(_previous: Dictionary) -> void:
