@@ -7,6 +7,8 @@ const Desktop = preload("res://scripts/desktop_service.gd")
 const Assets = preload("res://scripts/assets.gd")
 const SettingsStore = preload("res://scripts/settings_store.gd")
 const SettingsWindow = preload("res://scripts/settings_window.gd")
+const Fonts = preload("res://scripts/ui_fonts.gd")
+const Style = preload("res://scripts/settings_theme.gd")
 var pet_anchor := Vector2(96, 120)
 var settings: RefCounted
 var settings_window: Window
@@ -44,6 +46,7 @@ func _ready() -> void:
 	# Godot's main window cannot be hidden. Keep a transparent 1px host,
 	# and use two independently hideable native child windows instead.
 	var host := get_window()
+	host.theme = Fonts.theme()
 	host.title = "minispaceman"
 	host.transparent_bg = true
 	host.transparent = true
@@ -54,6 +57,8 @@ func _ready() -> void:
 	host.size = Vector2i.ONE
 	host.position = Vector2i(-32000, -32000)
 	host.close_requested.connect(_quit)
+	_set_window_taskbar(host, false)
+	_sync_dock()
 	pet = Window.new()
 	pet.visible = false
 	pet.force_native = true
@@ -76,21 +81,24 @@ func _ready() -> void:
 	_set_hit_region()
 	_restore_position()
 	pet.show()
+	_set_window_taskbar(pet, false)
 	pet.window_input.connect(_pet_input)
 	pet.close_requested.connect(_quit)
 	_menu = PopupMenu.new()
-	_menu.add_item("进入桌宠世界", 0)
-	_menu.add_item("设置…", 2)
+	_menu.add_item("设置", 2)
 	_menu.add_separator()
-	_menu.add_item("退出程序", 1)
+	_menu.add_item("退出", 1)
 	_menu.id_pressed.connect(func(id: int):
-		if id == 0: enter_world()
-		elif id == 2: _open_settings()
+		if id == 2: _open_settings()
 		else: _quit())
 	pet.add_child(_menu)
 	_dialog = AcceptDialog.new()
 	_dialog.title = "minispaceman"
 	pet.add_child(_dialog)
+	_refresh_ui_theme()
+	var missing := Fonts.missing_fonts()
+	if not missing.is_empty():
+		call_deferred("_show_error", "请安装字体：" + "、".join(missing))
 
 func _set_hit_region() -> void:
 	var image := Assets.texture("assembled/sheets/idle.png").get_image()
@@ -125,11 +133,10 @@ func _pet_input(event: InputEvent) -> void:
 					_save_position()
 
 func enter_world() -> void:
-	if is_instance_valid(settings_window):
-		settings_window.grab_focus()
-		return
 	if mode != Mode.PET:
 		return
+	if is_instance_valid(settings_window):
+		settings_window.suspend()
 	mode = Mode.ENTERING
 	_drag_candidate = false
 	_dragging = false
@@ -144,6 +151,7 @@ func enter_world() -> void:
 	var snapshot: Dictionary = desktop.capture_desktop(screen_id)
 	if snapshot.has("error"):
 		pet.show()
+		_set_window_taskbar(pet, false)
 		mode = Mode.PET
 		_show_error(snapshot["error"])
 		return
@@ -163,6 +171,7 @@ func _start_world(snapshot: Dictionary, anchor: Vector2) -> void:
 	world_window.transparent_bg = false
 	world_window.size = Vector2i(screen_size)
 	world_window.position = Vector2i(screen_origin)
+	world_window.theme = Fonts.theme()
 	world_window.world_2d = World2D.new()
 	add_child(world_window)
 	world = World.new()
@@ -173,6 +182,7 @@ func _start_world(snapshot: Dictionary, anchor: Vector2) -> void:
 	world_window.focus_exited.connect(_world_blurred)
 	world_window.focus_entered.connect(_world_focused)
 	world_window.show()
+	_set_window_taskbar(world_window, false)
 	world_window.grab_focus()
 	_portal_time = 0
 	mode = Mode.ENTERING
@@ -213,6 +223,7 @@ func leave_world() -> void:
 	pet.position = Vector2i((anchor - pet_anchor).round())
 	visual.play("idle")
 	pet.show()
+	_set_window_taskbar(pet, false)
 	Engine.max_fps = 30
 	mode = Mode.PET
 	_save_position()
@@ -306,6 +317,7 @@ func _quit() -> void:
 func _open_settings() -> void:
 	if is_instance_valid(settings_window):
 		settings_window.show()
+		_set_window_taskbar(settings_window, true)
 		settings_window.grab_focus()
 		return
 	_drag_candidate = false
@@ -315,6 +327,8 @@ func _open_settings() -> void:
 	settings_window.force_native = true
 	settings_window.store = settings
 	settings_window.initial_screen = _screen_for_anchor(Vector2(pet.position) + pet_anchor)
+	settings_window.visibility_changed.connect(_settings_visibility_changed)
+	settings_window.tree_exiting.connect(_sync_dock)
 	add_child(settings_window)
 
 func _settings_changed(_previous: Dictionary) -> void:
@@ -329,5 +343,31 @@ func _settings_changed(_previous: Dictionary) -> void:
 	pet.position = Vector2i((feet - pet_anchor - Vector2(0, 16 * art_scale)).round())
 	pet.always_on_top = settings.values.app.always_on_top
 	_set_hit_region()
+	_set_window_taskbar(pet, false)
+	_refresh_ui_theme()
 	_clamp_pet()
 	_save_position()
+
+func _refresh_ui_theme() -> void:
+	pet.theme = Style.build(settings.values.app.theme)
+	if is_instance_valid(world_window): world_window.theme = Fonts.theme()
+
+func _set_window_taskbar(window: Window, show_in_taskbar: bool) -> void:
+	if OS.get_name() == "macOS":
+		_sync_dock()
+		return
+	if OS.get_name() != "Windows" or desktop.bridge == null: return
+	var handle := DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE, window.get_window_id())
+	if handle != 0 and not desktop.bridge.set_window_taskbar_visible(handle, show_in_taskbar):
+		push_warning("无法更新窗口任务栏状态。")
+
+func _settings_visibility_changed() -> void:
+	if is_instance_valid(settings_window) and not settings_window.is_queued_for_deletion():
+		settings_window.process_mode = Node.PROCESS_MODE_INHERIT if settings_window.visible else Node.PROCESS_MODE_DISABLED
+		if settings_window.visible: _set_window_taskbar(settings_window, true)
+	_sync_dock()
+
+func _sync_dock() -> void:
+	if OS.get_name() != "macOS" or desktop.bridge == null: return
+	var show_icon := is_instance_valid(settings_window) and not settings_window.is_queued_for_deletion() and settings_window.visible
+	if not desktop.bridge.set_app_dock_visible(show_icon): push_warning("无法更新 Dock 状态。")

@@ -28,6 +28,8 @@ void DesktopBridge::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_autostart", "enabled", "executable"), &DesktopBridge::set_autostart);
     ClassDB::bind_method(D_METHOD("open_login_settings"), &DesktopBridge::open_login_settings);
     ClassDB::bind_method(D_METHOD("claim_instance"), &DesktopBridge::claim_instance);
+    ClassDB::bind_method(D_METHOD("set_window_taskbar_visible", "handle", "visible"), &DesktopBridge::set_window_taskbar_visible);
+    ClassDB::bind_method(D_METHOD("set_app_dock_visible", "visible"), &DesktopBridge::set_app_dock_visible);
 }
 
 #ifdef _WIN32
@@ -205,6 +207,39 @@ bool DesktopBridge::claim_instance() const {
     if (!candidate) return false;
     if (error == ERROR_ALREADY_EXISTS) { CloseHandle(candidate); return false; }
     instance = candidate;
+    return true;
+#endif
+}
+
+bool DesktopBridge::set_window_taskbar_visible(int64_t handle, bool visible) const {
+#ifdef _WIN32
+    HWND window = reinterpret_cast<HWND>(static_cast<intptr_t>(handle));
+    DWORD owner = 0;
+    GetWindowThreadProcessId(window, &owner);
+    if (!IsWindow(window) || owner != GetCurrentProcessId()) return false;
+    const LONG_PTR previous = GetWindowLongPtrW(window, GWL_EXSTYLE);
+    const LONG_PTR next = visible ? (previous | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
+                                  : (previous | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW;
+    if (previous == next) return true;
+    // The shell caches taskbar membership: change the styles while hidden.
+    const bool was_visible = IsWindowVisible(window);
+    if (was_visible) ShowWindow(window, SW_HIDE);
+    SetLastError(0);
+    const LONG_PTR result = SetWindowLongPtrW(window, GWL_EXSTYLE, next);
+    const bool ok = result != 0 || GetLastError() == 0;
+    SetWindowPos(window, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+    if (was_visible) ShowWindow(window, SW_SHOWNOACTIVATE);
+    return ok;
+#else
+    return true;
+#endif
+}
+
+bool DesktopBridge::set_app_dock_visible(bool visible) const {
+#ifdef __APPLE__
+    return mac_set_dock_visible(visible);
+#else
     return true;
 #endif
 }

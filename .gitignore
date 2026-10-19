@@ -26,3 +26,6 @@ build/*
 *.lib
 *.ilk
 __pycache__/
+
+# Generated, machine-specific clangd database
+/compile_commands.json

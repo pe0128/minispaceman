@@ -49,15 +49,11 @@ func _ready() -> void:
 	body.add_child(_sidebar)
 	var nav := VBoxContainer.new()
 	_sidebar.add_child(nav)
-	var brand := Label.new()
-	brand.text = "minispaceman"
-	brand.add_theme_font_size_override("font_size", 14)
-	brand.custom_minimum_size.y = 84
-	nav.add_child(brand)
 	var group := ButtonGroup.new()
 	for index in range(CATEGORIES.size()):
 		var button := Button.new()
 		button.text = CATEGORIES[index].title
+		button.theme_type_variation = "SettingsNavigation"
 		button.toggle_mode = true
 		button.button_group = group
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -97,6 +93,7 @@ func _ready() -> void:
 	actions.add_child(cancel)
 	_apply = Button.new()
 	_apply.text = "应用"
+	_apply.theme_type_variation = "SettingsApply"
 	_apply.custom_minimum_size.x = 90
 	_apply.pressed.connect(_apply_changes)
 	actions.add_child(_apply)
@@ -145,7 +142,7 @@ func _show_page(index: int) -> void:
 
 func _edited() -> void:
 	_apply.disabled = draft == store.values
-	_status.text = "有未应用的修改" if not _apply.disabled else "设置已保存"
+	_status.text = ""
 	_update_theme()
 
 func _update_theme() -> void:
@@ -154,8 +151,6 @@ func _update_theme() -> void:
 	_root.add_theme_stylebox_override("panel", Style.box(p.bg))
 	_sidebar.add_theme_stylebox_override("panel", Style.box(p.panel))
 	_status.add_theme_color_override("font_color", p.muted)
-	_apply.add_theme_stylebox_override("normal", Style.box(p.accent))
-	_apply.add_theme_color_override("font_color", p.bg)
 
 func _reset_page() -> void:
 	var key: String = CATEGORIES[_category].id
@@ -176,3 +171,7 @@ func _apply_changes() -> void:
 func _request_close() -> void:
 	if draft == store.values: queue_free()
 	else: _confirm.popup_centered(Vector2i(470, 150))
+
+func suspend() -> void:
+	_confirm.hide()
+	hide()

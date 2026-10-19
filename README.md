@@ -21,7 +21,7 @@ powershell -ExecutionPolicy Bypass -File tools/run.ps1
 | 输入 | 行为 |
 | --- | --- |
 | 拖动 / 双击桌宠 | 移动 / 进入世界 |
-| 右键桌宠 | 设置、进入世界或退出程序 |
+| 右键桌宠 | 设置或退出程序 |
 | A/D、左右方向键 | 左右移动 |
 | S、下方向键 | 蹲伏和蹲行 |
 | 空格 | 起跳；空中再次按下或持续按住 250 ms 启动喷气 |
@@ -53,13 +53,25 @@ bash tools/build_native.sh
 
 - 宇航员：50%、100%、150%、200% 四档整数像素尺寸，普通桌宠和桌宠世界共用；应用时保持脚下坐标。小、中、大喷气使用各自素材和发射参数，不改变推力。
 - 应用：登录后自动启动、普通桌宠置顶、记住位置、跟随系统/浅色/深色主题。
-- 预览只作用于设置窗口。设置打开期间暂不进入桌宠世界。
+- 预览只作用于设置窗口。双击桌宠会隐藏设置、保留草稿并进入世界；返回后可继续编辑。
+
+普通桌宠与世界窗口不占 Windows 任务栏位置。macOS 默认不显示 Dock 图标；设置显示时出现，隐藏或关闭后移除。关闭设置不退出桌宠。
+
+应用界面中文使用宋体（Windows SimSun，macOS 可回退 Songti SC），英文与数字使用 Times New Roman。字体从系统加载，缺失时提示安装；原生标题栏使用系统字体。
 
 配置写入 Godot 用户数据目录的 `settings.cfg`，位置单独保存在 `position.cfg`。Windows 通常位于 `%APPDATA%/Godot/app_userdata/minispaceman可交互桌宠/`；macOS 位于 `~/Library/Application Support/Godot/app_userdata/minispaceman可交互桌宠/`。
 
 自启动仅支持导出的应用。Windows 使用当前用户的 Run 登录项；macOS 13+ 使用 SMAppService，若显示「等待允许」，点击按钮进入系统登录项设置。请将应用放在固定位置后再启用；移动应用后重新关闭并开启此项。开发编辑器不会注册为登录项。应用有当前用户单实例保护。
 
 ## 检查与导出
+
+根目录 `compile_commands.json` 供 clangd 读取，包含实际编译参数、MSVC 和 Windows SDK 的头文件路径。它是本机生成文件，不提交到仓库。原生扩展构建完成后，可用以下命令刷新：
+
+```powershell
+& .tools/venv/Scripts/python.exe -m SCons -C native platform=windows arch=x86_64 target=template_debug custom_api_file=.build/extension_api.json build_profile=build_profile.json compiledb
+```
+
+macOS 使用本机工具链和 `platform=macos arch=universal` 生成，不复用 Windows 数据库。GDScript 补全使用 Godot 语言服务。
 
 ```powershell
 & 'D:/godot/Godot_v4.7.2-stable_win64_console.exe' --headless --editor --path . --import --quit

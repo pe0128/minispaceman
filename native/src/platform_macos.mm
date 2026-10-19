@@ -3,6 +3,7 @@
 #include <godot_cpp/variant/string.hpp>
 #import <Foundation/Foundation.h>
 #import <ServiceManagement/ServiceManagement.h>
+#import <AppKit/AppKit.h>
 #include <sys/file.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -51,5 +52,14 @@ bool mac_claim_instance() {
         if (flock(candidate, LOCK_EX | LOCK_NB) != 0) { close(candidate); return false; }
         descriptor = candidate;
         return true;
+    }
+}
+
+bool mac_set_dock_visible(bool visible) {
+    @autoreleasepool {
+        NSApplicationActivationPolicy policy = visible ? NSApplicationActivationPolicyRegular
+                                                       : NSApplicationActivationPolicyAccessory;
+        if ([NSApp activationPolicy] == policy) return true;
+        return [NSApp setActivationPolicy:policy];
     }
 }
