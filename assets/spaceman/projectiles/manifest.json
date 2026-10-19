@@ -1,0 +1,44 @@
+[
+  {
+    "name": "cyan",
+    "file": "projectiles/cyan.png",
+    "width": 16,
+    "height": 16,
+    "visibleSize": [
+      7,
+      8
+    ],
+    "anchor": {
+      "x": 8.0,
+      "y": 8.0
+    }
+  },
+  {
+    "name": "amber",
+    "file": "projectiles/amber.png",
+    "width": 20,
+    "height": 20,
+    "visibleSize": [
+      7,
+      12
+    ],
+    "anchor": {
+      "x": 10.0,
+      "y": 10.0
+    }
+  },
+  {
+    "name": "violet",
+    "file": "projectiles/violet.png",
+    "width": 24,
+    "height": 24,
+    "visibleSize": [
+      13,
+      14
+    ],
+    "anchor": {
+      "x": 12.0,
+      "y": 12.0
+    }
+  }
+]

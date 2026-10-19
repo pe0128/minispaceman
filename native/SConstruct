@@ -1,0 +1,16 @@
+#!/usr/bin/env python
+from pathlib import Path
+
+env = SConscript("godot-cpp/SConstruct")
+env.Append(CPPPATH=["src"])
+env["SHLIBPREFIX"] = ""
+if env["platform"] == "windows":
+    env.Append(LIBS=["user32", "dwmapi"])
+elif env["platform"] == "macos":
+    env.Append(FRAMEWORKS=["CoreGraphics", "CoreFoundation"])
+    env.Append(CCFLAGS=["-mmacosx-version-min=13.0"])
+else:
+    Exit("Only Windows and macOS are supported")
+suffix = env["suffix"]
+library = env.SharedLibrary("bin/minispaceman" + suffix + env["SHLIBSUFFIX"], Glob("src/*.cpp"))
+Default(library)

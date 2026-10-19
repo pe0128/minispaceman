@@ -9,3 +9,22 @@ Desktop.ini
 # Temporary files
 *.log
 *.tmp
+.godot/
+.tools/
+native/.build/
+native/bin/*
+!native/bin/.gitkeep
+native/.sconsign*
+native/src/*.obj
+native/src/*.obj.import
+native/src/*.os
+native/src/*.o
+build/*
+!build/.gdignore
+artifacts/*
+!artifacts/.gdignore
+*.pdb
+*.exp
+*.lib
+*.ilk
+__pycache__/

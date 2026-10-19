@@ -1,0 +1,79 @@
+{
+  "version": 10,
+  "frameWidth": 96,
+  "frameHeight": 96,
+  "root": {
+    "x": 48,
+    "y": 60
+  },
+  "layers": [
+    "Auxiliary rear",
+    "Body",
+    "Auxiliary reach",
+    "Primary hand + gun"
+  ],
+  "variants": [
+    {
+      "kind": "cyan",
+      "palmAnchor": {
+        "x": 7,
+        "y": 11
+      },
+      "idleSheet": "cyan/idle/assembled/sheet.png",
+      "throwSheet": "cyan/throw/assembled/sheet.png",
+      "idleFps": 6,
+      "throwFps": 9,
+      "releaseFrame": 3
+    },
+    {
+      "kind": "amber",
+      "palmAnchor": {
+        "x": 9,
+        "y": 15
+      },
+      "idleSheet": "amber/idle/assembled/sheet.png",
+      "throwSheet": "amber/throw/assembled/sheet.png",
+      "idleFps": 6,
+      "throwFps": 9,
+      "releaseFrame": 3
+    },
+    {
+      "kind": "violet",
+      "palmAnchor": {
+        "x": 11,
+        "y": 18
+      },
+      "idleSheet": "violet/idle/assembled/sheet.png",
+      "throwSheet": "violet/throw/assembled/sheet.png",
+      "idleFps": 6,
+      "throwFps": 9,
+      "releaseFrame": 3
+    }
+  ],
+  "auxiliaryTranslation": {
+    "x": 0,
+    "y": -2
+  },
+  "heldOffset": {
+    "x": 0,
+    "y": 0
+  },
+  "gloveSamples": [
+    [
+      0,
+      0,
+      6,
+      3,
+      -3,
+      -2
+    ],
+    [
+      0,
+      3,
+      5,
+      2,
+      -3,
+      1
+    ]
+  ]
+}

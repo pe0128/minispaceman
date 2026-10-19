@@ -1,0 +1,75 @@
+{
+  "variants": [
+    {
+      "name": "jet-small",
+      "sheet": "effects/jet-small/sheet.png",
+      "frameCount": 6,
+      "fps": 12,
+      "width": 32,
+      "height": 32,
+      "anchor": {
+        "x": 16,
+        "y": 2
+      }
+    },
+    {
+      "name": "jet-medium",
+      "sheet": "effects/jet-medium/sheet.png",
+      "frameCount": 6,
+      "fps": 12,
+      "width": 32,
+      "height": 32,
+      "anchor": {
+        "x": 16,
+        "y": 16
+      },
+      "emitter": {
+        "interval": 0.1,
+        "life": 0.72,
+        "speed": 90,
+        "spreadSpeed": 5,
+        "maxScale": 1.2,
+        "burst": 1,
+        "width": 64,
+        "height": 112
+      },
+      "loop": false,
+      "assetMeaning": "one gas puff lifecycle; emitter controls overall plume"
+    },
+    {
+      "name": "jet-large",
+      "sheet": "effects/jet-large/sheet.png",
+      "frameCount": 6,
+      "fps": 12,
+      "width": 32,
+      "height": 32,
+      "anchor": {
+        "x": 16,
+        "y": 16
+      },
+      "emitter": {
+        "interval": 0.12,
+        "life": 1.5,
+        "speed": 115,
+        "spreadSpeed": 145,
+        "maxScale": 3.6,
+        "burst": 3,
+        "width": 480,
+        "height": 288
+      },
+      "loop": false,
+      "assetMeaning": "one gas puff lifecycle; emitter controls overall plume"
+    }
+  ],
+  "puff": {
+    "sheet": "effects/gas-puff/sheet.png",
+    "frameCount": 6,
+    "width": 32,
+    "height": 32,
+    "anchor": {
+      "x": 16,
+      "y": 16
+    },
+    "loop": false
+  }
+}
