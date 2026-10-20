@@ -9,3 +9,4 @@ void mac_initialize_lifecycle();
 void mac_terminate_lifecycle();
 bool mac_launched_at_login();
 bool mac_consume_reopen();
+bool mac_present_menu_window(int64_t handle);

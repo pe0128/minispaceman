@@ -51,6 +51,17 @@ static func build(mode: String) -> Theme:
 	theme.set_stylebox("focus", "SettingsApply", box(Color.TRANSPARENT, p.text, 2))
 	theme.set_stylebox("panel", "PopupMenu", box(p.panel, p.line, 1))
 	theme.set_stylebox("hover", "PopupMenu", box(p.panel.lerp(p.accent, 0.16)))
+	theme.set_type_variation("PetMenuPanel", "PanelContainer")
+	var menu_panel := box(p.panel, p.line, 1)
+	menu_panel.set_content_margin_all(8)
+	theme.set_stylebox("panel", "PetMenuPanel", menu_panel)
+	theme.set_type_variation("PetMenuItem", "Button")
+	for state: String in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+		var fill: Color = p.panel if state == "normal" else p.panel.lerp(p.accent, 0.16)
+		var item_style := box(fill, p.accent if state == "focus" else Color.TRANSPARENT, 1)
+		item_style.content_margin_top = 6
+		item_style.content_margin_bottom = 6
+		theme.set_stylebox(state, "PetMenuItem", item_style)
 	theme.set_stylebox("panel", "Panel", box(p.panel.lerp(p.accent, 0.08), p.line, 1))
 	theme.set_stylebox("panel", "AcceptDialog", box(p.bg, p.line, 1))
 	theme.set_constant("separation", "VBoxContainer", 16)

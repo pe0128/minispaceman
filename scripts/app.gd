@@ -10,6 +10,7 @@ const SettingsWindow = preload("res://scripts/settings_window.gd")
 const Fonts = preload("res://scripts/ui_fonts.gd")
 const Style = preload("res://scripts/settings_theme.gd")
 const Resident = preload("res://scripts/resident_service.gd")
+const PetMenu = preload("res://scripts/pet_menu.gd")
 const APP_ICON = preload("res://assets/icons/app.png")
 const TRAY_ICON = preload("res://assets/icons/tray.png")
 const TRAY_DISABLED = preload("res://assets/icons/tray_disabled.png")
@@ -32,12 +33,12 @@ var _dragging := false
 var _drag_start := Vector2.ZERO
 var _window_start := Vector2.ZERO
 var _check_time := 0.0
-var _menu: PopupMenu
+var _menu: Window
 var _dialog: AcceptDialog
 var _quitting := false
 var _last_size := Vector2i.ZERO
 var _tray_id := -1
-var _tray_menu: PopupMenu
+var _tray_menu: Window
 var _resident: Node
 var _enabled := true
 var _startup := false
@@ -111,32 +112,34 @@ func _ready() -> void:
 		pet.process_mode = Node.PROCESS_MODE_DISABLED
 	_set_window_taskbar(pet, false)
 	pet.window_input.connect(_pet_input)
-	pet.close_requested.connect(_quit)
-	_menu = PopupMenu.new()
+	pet.close_requested.connect(func(): _set_enabled(false))
+	_menu = PetMenu.new()
+	_menu.bridge = desktop.bridge
+	add_child(_menu)
 	_menu.add_item("设置", 2)
 	_menu.add_separator()
-	_menu.add_item("退出", 1)
+	_menu.add_item("退出桌宠", 1)
 	_menu.id_pressed.connect(func(id: int):
 		if id == 2: _open_settings()
-		else: _quit())
-	pet.add_child(_menu)
-	_tray_menu = PopupMenu.new()
-	_tray_menu.prefer_native_menu = false
-	_tray_menu.add_item("停用桌宠", 0)
+		else: _set_enabled(false))
+	_menu.visibility_changed.connect(_update_refresh_rate)
+	_tray_menu = PetMenu.new()
+	_tray_menu.bridge = desktop.bridge
+	add_child(_tray_menu)
+	_tray_menu.add_item("退出桌宠", 0)
 	_tray_menu.add_item("设置", 2)
 	_tray_menu.add_separator()
-	_tray_menu.add_item("退出", 1)
+	_tray_menu.add_item("退出程序", 1)
 	_tray_menu.id_pressed.connect(func(id: int):
 		if id == 0: _set_enabled(not _enabled)
 		elif id == 2: _open_settings()
 		else: _quit())
 	_tray_menu.visibility_changed.connect(_update_refresh_rate)
-	add_child(_tray_menu)
 	_dialog = AcceptDialog.new()
 	_dialog.title = "minispaceman"
 	add_child(_dialog)
 	_refresh_ui_theme()
-	_tray_id = DisplayServer.create_status_indicator(TRAY_ICON if _enabled else TRAY_DISABLED, "minispaceman", _tray_pressed)
+	_tray_id = DisplayServer.create_status_indicator(_tray_icon(), "minispaceman", _tray_pressed)
 	if _tray_id < 0 or ipc_error != OK:
 		_open_settings()
 		_show_error("无法创建系统托盘。" if _tray_id < 0 else "无法建立本机唤醒通道。")
@@ -144,14 +147,16 @@ func _ready() -> void:
 
 func _tray_pressed(button: int, position: Vector2i) -> void:
 	if button not in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]: return
-	_tray_menu.set_item_text(0, "停用桌宠" if _enabled else "启用桌宠")
-	_tray_menu.position = position
-	_tray_menu.popup()
+	_menu.hide()
+	_tray_menu.set_item_text(0, "退出桌宠" if _enabled else "启用桌宠")
+	_tray_menu.present(position, settings.values.app.theme)
 	_update_refresh_rate()
 
 func _set_enabled(enabled: bool) -> void:
 	if _quitting or not is_instance_valid(pet): return
-	if enabled == _enabled: return
+	if enabled == _enabled:
+		_sync_tray()
+		return
 	_enabled = enabled
 	_drag_candidate = false
 	_dragging = false
@@ -168,12 +173,26 @@ func _set_enabled(enabled: bool) -> void:
 		_clamp_pet()
 		pet.show()
 		_set_window_taskbar(pet, false)
-	if _tray_id >= 0: DisplayServer.status_indicator_set_icon(_tray_id, TRAY_ICON if enabled else TRAY_DISABLED)
+	_sync_tray()
 	_update_refresh_rate()
+
+func _sync_tray() -> void:
+	if _tray_id >= 0: DisplayServer.status_indicator_set_icon(_tray_id, _tray_icon())
+	if is_instance_valid(_tray_menu): _tray_menu.set_item_text(0, "退出桌宠" if _enabled else "启用桌宠")
+
+func _tray_icon() -> Texture2D:
+	var screen := DisplayServer.get_primary_screen()
+	var target := 20.0 * maxf(1, DisplayServer.screen_get_scale(screen))
+	if OS.get_name() == "Windows": target = 16.0 * maxf(1, DisplayServer.screen_get_dpi(screen) / 96.0)
+	var best := 16
+	for size: int in [20, 24, 32, 40, 48, 64]:
+		if absf(size - target) < absf(best - target): best = size
+	var path := "res://assets/icons/%s_%d.png" % ["tray" if _enabled else "tray_disabled", best]
+	return load(path) if ResourceLoader.exists(path) else (TRAY_ICON if _enabled else TRAY_DISABLED)
 
 func _update_refresh_rate() -> void:
 	var settings_visible := is_instance_valid(settings_window) and not settings_window.is_queued_for_deletion() and settings_window.visible
-	var menu_visible := is_instance_valid(_tray_menu) and _tray_menu.visible
+	var menu_visible := (is_instance_valid(_tray_menu) and _tray_menu.visible) or (is_instance_valid(_menu) and _menu.visible)
 	Engine.max_fps = 60 if is_instance_valid(world) else (30 if _enabled or settings_visible or menu_visible else 5)
 
 func _set_hit_region() -> void:
@@ -191,8 +210,8 @@ func _pet_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-			_menu.position = DisplayServer.mouse_get_position()
-			_menu.popup()
+			_tray_menu.hide()
+			_menu.present(DisplayServer.mouse_get_position(), settings.values.app.theme)
 		elif event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed and event.double_click:
 				_drag_candidate = false

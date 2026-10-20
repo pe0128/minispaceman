@@ -37,7 +37,7 @@ Windows 排除本进程、最小化、隐藏、DWM cloaked、工具和桌面壳�
 
 `settings_window.gd` 的 CATEGORIES 注册分类，独立页面继承 `settings_page.gd`。新增设置时，在 Store 的默认值和校验中加入字段，在对应页面绑定草稿，并在应用控制器响应 changed。整个窗口共享一份草稿，不因切页而丢失修改。`settings_theme.gd` 集中维护颜色、字体、交互状态和系统主题响应。
 
-双击桌宠始终进入世界；已有设置窗口隐藏并停用处理，草稿保持在内存，返回后重新打开继续编辑。右键仅保留设置和退出。界面只显示标签、选项和操作按钮；授权、保存失败与未保存修改按需提示。
+双击桌宠始终进入世界；已有设置窗口隐藏并停用处理，草稿保持在内存，返回后重新打开继续编辑。右键仅保留设置和退出桌宠；退出桌宠隐藏角色，保留进程和灰色托盘。只有托盘的退出程序结束进程。界面只显示标签、选项和操作按钮；授权、保存失败与未保存修改按需提示。
 
 字体由 ui_fonts 统一创建，主字体 Times New Roman，中文字符回退至 SimSun/Songti SC。按钮、应用按钮和分类导航使用独立主题变体，显式覆盖 hover_pressed 等状态，所有状态保持相同内容边距。
 
@@ -51,7 +51,11 @@ Windows 排除本进程、最小化、隐藏、DWM cloaked、工具和桌面壳�
 
 Windows 命名互斥体、macOS 当前用户文件锁提供单实例保护。`resident_service.gd` 在 127.0.0.1 的动态端口监听，将端口和每次随机的 256 位令牌写入用户目录 `resident.json`。重复手动启动发送令牌并等待确认后退出；重复登录启动直接退出。连接数量、请求大小和超时均有限制，正常退出清理端点文件。
 
-DisplayServer 托盘接口不绑定原生菜单，而是左右键点击后显示 Godot PopupMenu，以保持宋体和 Times New Roman。菜单包含当前启停操作、设置、退出，停用时图标灰化。应用及各原生窗口始终使用彩色宇航员图标，PNG/ICO/ICNS 由 `tools/generate_icons.gd` 从项目内站立第一帧生成。托盘不可用时打开设置并提示，关闭该设置会退出，避免失去操作入口。
+DisplayServer 托盘接口不绑定原生菜单。`pet_menu.gd` 为托盘与桌宠右键提供独立的非 transient、非 Popup、可聚焦原生 Window；不继承后台宿主的穿透或不可聚焦行为。菜单置顶，以按钮绘制并沿用宋体、Times New Roman 和集中主题，失焦或 Esc 关闭，默认 GUI 导航处理上下键和 Enter。DPI 和可用屏幕区域决定大小与位置。
+
+`DesktopBridge.present_menu_window(handle)` 仅操作本进程窗口：Windows 设置 TOOLWINDOW、清除 APPWINDOW/NOACTIVATE、置顶并激活焦点；macOS 校验 NSApp 窗口列表，设置 NSPopUpMenuWindowLevel 并激活窗口，保留 Accessory 策略。菜单不占任务栏或 Dock。
+
+应用及各原生窗口始终使用彩色宇航员图标。灰色托盘源图 `assets/icons/tray_disabled_source.png` 通过 imagegen 以原站立宇航员为参考绘制；生成工具将其标准化为不透明灰阶像素与透明背景，并生成 16/20/24/32/40/48/64 像素版本。运行时按主屏 DPI 选择尺寸，创建和启停时统一同步图标与菜单文字；重新生成不会覆盖源图。托盘不可用时打开设置并提示，关闭该设置会退出，避免失去操作入口。
 
 ## 构建检查
 

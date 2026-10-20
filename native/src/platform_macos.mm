@@ -116,3 +116,17 @@ bool mac_set_dock_visible(bool visible) {
         return [NSApp setActivationPolicy:policy];
     }
 }
+
+bool mac_present_menu_window(int64_t handle) {
+    @autoreleasepool {
+        // Compare against AppKit's own list before dereferencing a native handle.
+        for (NSWindow *window in [NSApp windows]) {
+            if (reinterpret_cast<intptr_t>(window) != handle) continue;
+            [window setLevel:NSPopUpMenuWindowLevel];
+            [NSApp activateIgnoringOtherApps:YES];
+            [window makeKeyAndOrderFront:nil];
+            return [window isKeyWindow];
+        }
+        return false;
+    }
+}

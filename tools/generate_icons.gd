@@ -6,7 +6,27 @@ func _initialize() -> void:
 	var source := Image.load_from_file("res://assets/spaceman/assembled/sheets/idle.png")
 	var frame := source.get_region(Rect2i(0, 0, 96, 96))
 	var sprite := frame.get_region(frame.get_used_rect())
+	var disabled := Image.load_from_file("res://assets/icons/tray_disabled_source.png")
+	disabled = disabled.get_region(disabled.get_used_rect())
+	# Normalize the approved drawing for small tray sizes; keep opaque pixels,
+	# strong grayscale steps and a genuinely transparent background.
+	for y in disabled.get_height():
+		for x in disabled.get_width():
+			var color := disabled.get_pixel(x, y)
+			var gray := snappedf(color.r * 0.299 + color.g * 0.587 + color.b * 0.114, 0.2)
+			disabled.set_pixel(x, y, Color(gray, gray, gray, 1.0 if color.a >= 0.5 else 0.0))
 	DirAccess.make_dir_recursive_absolute("res://assets/icons")
+	for size: int in [16, 20, 24, 32, 40, 48, 64]:
+		for inactive: bool in [false, true]:
+			var input: Image = disabled if inactive else sprite
+			var scaled := input.duplicate()
+			var factor := float(size) * 0.9 / maxi(input.get_width(), input.get_height())
+			scaled.resize(maxi(1, roundi(input.get_width() * factor)), maxi(1, roundi(input.get_height() * factor)), Image.INTERPOLATE_NEAREST)
+			var canvas := Image.create(size, size, false, Image.FORMAT_RGBA8)
+			canvas.blit_rect(scaled, Rect2i(Vector2i.ZERO, scaled.get_size()), (Vector2i(size, size) - scaled.get_size()) / 2)
+			var stem := "tray_disabled" if inactive else "tray"
+			canvas.save_png("res://assets/icons/%s_%d.png" % [stem, size])
+			if size == 32: canvas.save_png("res://assets/icons/%s.png" % stem)
 	var pngs: Dictionary = {}
 	for size: int in [16, 24, 32, 48, 64, 128, 256, 512, 1024]:
 		var scaled := sprite.duplicate()
@@ -16,14 +36,6 @@ func _initialize() -> void:
 		canvas.blit_rect(scaled, Rect2i(Vector2i.ZERO, scaled.get_size()), (Vector2i(size, size) - scaled.get_size()) / 2)
 		pngs[size] = canvas.save_png_to_buffer()
 		if size == 256: canvas.save_png("res://assets/icons/app.png")
-		if size == 32:
-			canvas.save_png("res://assets/icons/tray.png")
-			for y in size:
-				for x in size:
-					var color := canvas.get_pixel(x, y)
-					var gray := color.r * 0.299 + color.g * 0.587 + color.b * 0.114
-					canvas.set_pixel(x, y, Color(gray, gray, gray, color.a * 0.7))
-			canvas.save_png("res://assets/icons/tray_disabled.png")
 	var ico := StreamPeerBuffer.new()
 	ico.put_u16(0)
 	ico.put_u16(1)

@@ -33,6 +33,7 @@ void DesktopBridge::_bind_methods() {
     ClassDB::bind_method(D_METHOD("consume_reopen"), &DesktopBridge::consume_reopen);
     ClassDB::bind_method(D_METHOD("set_window_taskbar_visible", "handle", "visible"), &DesktopBridge::set_window_taskbar_visible);
     ClassDB::bind_method(D_METHOD("set_app_dock_visible", "visible"), &DesktopBridge::set_app_dock_visible);
+    ClassDB::bind_method(D_METHOD("present_menu_window", "handle"), &DesktopBridge::present_menu_window);
 }
 
 #ifdef _WIN32
@@ -275,5 +276,29 @@ bool DesktopBridge::set_app_dock_visible(bool visible) const {
     return mac_set_dock_visible(visible);
 #else
     return true;
+#endif
+}
+
+bool DesktopBridge::present_menu_window(int64_t handle) const {
+#ifdef _WIN32
+    HWND window = reinterpret_cast<HWND>(static_cast<intptr_t>(handle));
+    DWORD owner = 0;
+    GetWindowThreadProcessId(window, &owner);
+    if (!IsWindow(window) || owner != GetCurrentProcessId()) return false;
+    // The shell caches taskbar membership when a window first becomes visible.
+    // Reuse the hide/style/show path before bringing this menu to the foreground.
+    if (!set_window_taskbar_visible(handle, false)) return false;
+    const LONG_PTR style = GetWindowLongPtrW(window, GWL_EXSTYLE);
+    SetWindowLongPtrW(window, GWL_EXSTYLE, (style | WS_EX_TOOLWINDOW) & ~(WS_EX_APPWINDOW | WS_EX_NOACTIVATE));
+    SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    SetForegroundWindow(window);
+    if (GetForegroundWindow() != window) return false;
+    SetFocus(window);
+    return true;
+#elif defined(__APPLE__)
+    return mac_present_menu_window(handle);
+#else
+    return false;
 #endif
 }
