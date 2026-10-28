@@ -13,22 +13,22 @@ var platform_rects: Array[Rect2] = []
 var portal: ColorRect
 var hint: Label
 var _hint_time := 8.0
-var _paused_label: Label
 var _portal_material: ShaderMaterial
+var _pending_platforms: Array[Rect2] = []
+var _platform_refresh_pending := false
+var _platform_exclusions: Array[Dictionary] = []
+var _paused := false
 
 func build(snapshot: Dictionary, start: Vector2, art_scale: float = 2.0, smoke_style: String = "small") -> void:
 	world_size = snapshot["size"]
-	var background := TextureRect.new()
-	background.texture = ImageTexture.create_from_image(snapshot["image"])
-	background.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-	background.size = world_size
-	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	background.z_index = -10
-	add_child(background)
-	platform_rects.assign(snapshot["platforms"])
-	for rect: Rect2 in platform_rects:
-		_add_platform(rect, true)
+	# Alpha-zero layered pixels can pass mouse input through on Windows. Keep
+	# one alpha step over the whole display while showing the real compositor.
+	var input_surface := ColorRect.new()
+	input_surface.color = Color(0, 0, 0, 1.0 / 255.0 if OS.get_name() == "Windows" else 0.0)
+	input_surface.size = world_size
+	input_surface.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	input_surface.z_index = -10
+	add_child(input_surface)
 	_add_platform(Rect2(0, world_size.y - 8, world_size.x, 32), false)
 	_add_platform(Rect2(-32, -200, 32, world_size.y + 232), false)
 	_add_platform(Rect2(world_size.x, -200, 32, world_size.y + 232), false)
@@ -47,9 +47,11 @@ func build(snapshot: Dictionary, start: Vector2, art_scale: float = 2.0, smoke_s
 		item.z_index = 1
 		add_child(item)
 		props.append(item)
+	update_platforms(snapshot["platforms"])
+	_apply_platforms()
 	_make_ui(start)
 
-func _add_platform(rect: Rect2, one_way: bool) -> void:
+func _add_platform(rect: Rect2, one_way: bool) -> StaticBody2D:
 	var body := StaticBody2D.new()
 	body.collision_layer = 1
 	body.collision_mask = 2 | 4
@@ -62,8 +64,58 @@ func _add_platform(rect: Rect2, one_way: bool) -> void:
 	collision.one_way_collision_margin = 6
 	body.add_child(collision)
 	add_child(body)
-	if one_way:
-		platforms.append(body)
+	return body
+
+func update_platforms(rects: Array) -> void:
+	if rects == platform_rects and not _platform_refresh_pending: return
+	_pending_platforms.assign(rects)
+	_platform_refresh_pending = true
+
+func _apply_platforms() -> void:
+	if not _platform_refresh_pending: return
+	_platform_refresh_pending = false
+	var old: Dictionary = {}
+	for index in platforms.size(): old[platform_rects[index]] = platforms[index]
+	var next: Array[StaticBody2D] = []
+	for rect: Rect2 in _pending_platforms:
+		if old.has(rect):
+			next.append(old[rect])
+			old.erase(rect)
+		else:
+			var body := _add_platform(rect, true)
+			next.append(body)
+			var actors: Array[PhysicsBody2D] = [player]
+			for prop: RigidBody2D in props: actors.append(prop)
+			for actor: PhysicsBody2D in actors:
+				if actor.world_bounds().intersects(rect.grow(6)):
+					actor.add_collision_exception_with(body)
+					_platform_exclusions.append({"actor": actor, "body": body, "rect": rect})
+			if player.is_dropping_through(): player.add_collision_exception_with(body)
+	for body: StaticBody2D in old.values():
+		body.collision_layer = 0
+		body.queue_free()
+	platforms = next
+	platform_rects = _pending_platforms.duplicate()
+	queue_redraw()
+
+func _has_exclusion(actor: PhysicsBody2D, body: StaticBody2D) -> bool:
+	for entry: Dictionary in _platform_exclusions:
+		if entry.actor == actor and entry.body == body: return true
+	return false
+
+func _release_platform_exclusions() -> void:
+	for index in range(_platform_exclusions.size() - 1, -1, -1):
+		var entry: Dictionary = _platform_exclusions[index]
+		if not is_instance_valid(entry.body) or not is_instance_valid(entry.actor):
+			_platform_exclusions.remove_at(index)
+		elif not entry.actor.world_bounds().intersects(entry.rect.grow(6)):
+			if entry.actor != player or not player.is_dropping_through():
+				entry.actor.remove_collision_exception_with(entry.body)
+			_platform_exclusions.remove_at(index)
+
+func apply_appearance(art_scale: float, smoke_style: String) -> void:
+	player.apply_appearance(art_scale, smoke_style)
+	for prop: RigidBody2D in props: prop.apply_art_scale(art_scale)
 
 func _make_ui(start: Vector2) -> void:
 	var hud := CanvasLayer.new()
@@ -79,13 +131,6 @@ func _make_ui(start: Vector2) -> void:
 	hint.position = Vector2(24, 20)
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(hint)
-	_paused_label = Label.new()
-	_paused_label.text = "已暂停 · 回到此窗口继续 · Esc 返回桌宠"
-	_paused_label.position = Vector2(24, 50)
-	_paused_label.add_theme_font_size_override("font_size", 20)
-	_paused_label.add_theme_color_override("font_shadow_color", Color.BLACK)
-	_paused_label.visible = false
-	hud.add_child(_paused_label)
 	portal = ColorRect.new()
 	portal.size = world_size
 	portal.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -101,7 +146,8 @@ func set_portal_progress(progress: float) -> void:
 	portal.visible = progress < 1.0
 
 func set_paused(paused: bool) -> void:
-	_paused_label.visible = paused
+	_paused = paused
+	PhysicsServer2D.space_set_active(get_world_2d().space, not paused)
 	process_mode = Node.PROCESS_MODE_DISABLED if paused else Node.PROCESS_MODE_INHERIT
 
 func drop_player_through_platforms(actor: PhysicsBody2D) -> void:
@@ -110,7 +156,7 @@ func drop_player_through_platforms(actor: PhysicsBody2D) -> void:
 
 func restore_player_platforms(actor: PhysicsBody2D) -> void:
 	for platform: StaticBody2D in platforms:
-		actor.remove_collision_exception_with(platform)
+		if not _has_exclusion(actor, platform): actor.remove_collision_exception_with(platform)
 
 func fire(from: Vector2, direction: Vector2, actor: PhysicsBody2D) -> void:
 	if bullets.size() >= 128:
@@ -119,6 +165,9 @@ func fire(from: Vector2, direction: Vector2, actor: PhysicsBody2D) -> void:
 		"life": Config.BULLET_LIFETIME, "exclude": [actor.get_rid()]})
 
 func _physics_process(delta: float) -> void:
+	if _paused: return
+	_apply_platforms()
+	_release_platform_exclusions()
 	for i in range(bullets.size() - 1, -1, -1):
 		var bullet: Dictionary = bullets[i]
 		var start: Vector2 = bullet["position"]

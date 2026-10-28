@@ -130,3 +130,16 @@ bool mac_present_menu_window(int64_t handle) {
         return false;
     }
 }
+
+bool mac_present_world_window(int64_t handle) {
+    @autoreleasepool {
+        for (NSWindow *window in [NSApp windows]) {
+            if (reinterpret_cast<intptr_t>(window) != handle) continue;
+            [window setLevel:NSFloatingWindowLevel];
+            [NSApp activateIgnoringOtherApps:YES];
+            [window makeKeyAndOrderFront:nil];
+            return [window isKeyWindow];
+        }
+        return false;
+    }
+}

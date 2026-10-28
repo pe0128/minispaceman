@@ -39,6 +39,21 @@ func clear_controls() -> void:
 	flight.reset()
 	visual.jetting = false
 
+func world_bounds() -> Rect2:
+	return Rect2(_collider.global_position - _collider.shape.size * 0.5, _collider.shape.size)
+
+func is_dropping_through() -> bool:
+	return _drop_time > 0
+
+func apply_appearance(value: float, smoke: String) -> void:
+	art_scale = value
+	smoke_style = smoke
+	visual.art_scale = value
+	visual.scale = Vector2.ONE * value
+	visual.smoke_style = smoke
+	_collider.shape.size = Vector2(32, 82) * value / 2
+	_collider.position = Vector2(0, -9) * value / 2
+
 func _physics_process(delta: float) -> void:
 	if not enabled:
 		return

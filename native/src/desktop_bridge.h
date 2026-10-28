@@ -20,5 +20,6 @@ public:
     bool set_window_taskbar_visible(int64_t handle, bool visible) const;
     bool set_app_dock_visible(bool visible) const;
     bool present_menu_window(int64_t handle) const;
+    bool present_world_window(int64_t handle) const;
 };
 }

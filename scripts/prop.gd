@@ -6,6 +6,7 @@ var art_scale := Config.ART_SCALE
 var kind := "cyan"
 var held := false
 var sprite: Sprite2D
+var _collider: CollisionShape2D
 
 func _ready() -> void:
 	collision_layer = 4
@@ -21,10 +22,20 @@ func _ready() -> void:
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	add_child(sprite)
 	var collider := CollisionShape2D.new()
+	_collider = collider
 	var shape := CircleShape2D.new()
 	shape.radius = {"cyan": 8.0, "amber": 10.0, "violet": 13.0}[kind] * art_scale / 2
 	collider.shape = shape
 	add_child(collider)
+
+func world_bounds() -> Rect2:
+	var radius: float = _collider.shape.radius
+	return Rect2(global_position - Vector2.ONE * radius, Vector2.ONE * radius * 2)
+
+func apply_art_scale(value: float) -> void:
+	art_scale = value
+	sprite.scale = Vector2.ONE * value
+	_collider.shape.radius = {"cyan": 8.0, "amber": 10.0, "violet": 13.0}[kind] * value / 2
 
 func pickup() -> void:
 	held = true

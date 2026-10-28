@@ -44,6 +44,10 @@ var _enabled := true
 var _startup := false
 var _font_warning_shown := false
 var _entry_generation := 0
+var _platform_check_time := 0.0
+var _presenting_world := false
+var _presentation_generation := 0
+var _pending_leave := false
 
 func _ready() -> void:
 	# Configure the default before any child native windows are created.
@@ -193,7 +197,7 @@ func _tray_icon() -> Texture2D:
 func _update_refresh_rate() -> void:
 	var settings_visible := is_instance_valid(settings_window) and not settings_window.is_queued_for_deletion() and settings_window.visible
 	var menu_visible := (is_instance_valid(_tray_menu) and _tray_menu.visible) or (is_instance_valid(_menu) and _menu.visible)
-	Engine.max_fps = 60 if is_instance_valid(world) else (30 if _enabled or settings_visible or menu_visible else 5)
+	Engine.max_fps = 60 if mode in [Mode.ENTERING, Mode.WORLD] else (30 if _enabled or settings_visible or menu_visible else 5)
 
 func _set_hit_region() -> void:
 	var image := Assets.texture("assembled/sheets/idle.png").get_image()
@@ -206,7 +210,7 @@ func _set_hit_region() -> void:
 	pet.mouse_passthrough_polygon = PackedVector2Array([rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)])
 
 func _pet_input(event: InputEvent) -> void:
-	if mode != Mode.PET:
+	if mode not in [Mode.PET, Mode.PAUSED]:
 		return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
@@ -228,6 +232,9 @@ func _pet_input(event: InputEvent) -> void:
 					_save_position()
 
 func enter_world() -> void:
+	if mode == Mode.PAUSED and is_instance_valid(world):
+		_resume_world()
+		return
 	if mode != Mode.PET:
 		return
 	_entry_generation += 1
@@ -241,12 +248,11 @@ func enter_world() -> void:
 	screen_origin = DisplayServer.screen_get_position(screen_id)
 	screen_size = DisplayServer.screen_get_size(screen_id)
 	var anchor := Vector2(pet.position) + pet_anchor - screen_origin
-	# Hidden capture is deliberate: capture exclusions are compositor-dependent.
 	pet.hide()
 	await get_tree().process_frame
 	await get_tree().process_frame
 	if not _enabled or _quitting or generation != _entry_generation: return
-	var snapshot: Dictionary = desktop.capture_desktop(screen_id)
+	var snapshot: Dictionary = desktop.describe_desktop(screen_id)
 	if snapshot.has("error"):
 		pet.show()
 		_set_window_taskbar(pet, false)
@@ -266,7 +272,10 @@ func _start_world(snapshot: Dictionary, anchor: Vector2) -> void:
 	world_window.borderless = true
 	world_window.unresizable = true
 	world_window.always_on_top = true
-	world_window.transparent_bg = false
+	world_window.transparent = true
+	world_window.transparent_bg = true
+	world_window.mouse_passthrough = false
+	world_window.unfocusable = false
 	world_window.size = Vector2i(screen_size)
 	world_window.position = Vector2i(screen_origin)
 	world_window.theme = Fonts.theme()
@@ -277,41 +286,122 @@ func _start_world(snapshot: Dictionary, anchor: Vector2) -> void:
 	world.build(snapshot, anchor, settings.art_scale(), settings.values.astronaut.smoke)
 	world_window.close_requested.connect(leave_world)
 	world_window.window_input.connect(_world_input)
-	world_window.focus_exited.connect(_world_blurred)
-	world_window.focus_entered.connect(_world_focused)
-	world_window.show()
-	_set_window_taskbar(world_window, false)
-	world_window.grab_focus()
+	world_window.focus_exited.connect(func(): call_deferred("_world_blurred"))
 	_portal_time = 0
-	mode = Mode.ENTERING
-	Config.clear_input()
 	_last_size = DisplayServer.screen_get_size(screen_id)
+	_present_world()
+
+func _present_world() -> void:
+	_presenting_world = true
+	_presentation_generation += 1
+	_pending_leave = false
+	mode = Mode.ENTERING
+	world.player.clear_controls()
+	world.player.enabled = false
+	world.set_paused(true)
+	# A hidden native Window gets a new handle when shown. Wait for the nonzero
+	# alpha surface to be drawn before restoring gameplay and keyboard control.
+	world_window.unfocusable = false
+	world_window.mouse_passthrough = false
+	world_window.show()
+	_platform_check_time = 0
+	_update_refresh_rate()
+	_finish_present_world(_presentation_generation)
+
+func _finish_present_world(generation: int) -> void:
+	await RenderingServer.frame_post_draw
+	await get_tree().process_frame
+	if generation != _presentation_generation or not is_instance_valid(world): return
+	_set_window_taskbar(world_window, false)
+	if desktop.bridge != null:
+		var handle := DisplayServer.window_get_native_handle(DisplayServer.WINDOW_HANDLE, world_window.get_window_id())
+		if not desktop.bridge.present_world_window(handle):
+			_world_blurred_after_failed_activation()
+			return
+	world_window.grab_focus()
+	# Window creation and taskbar style changes can queue a temporary focus loss.
+	# Let native focus notifications settle before treating it as an app switch.
+	for frame in range(3): await get_tree().process_frame
+	if generation != _presentation_generation or not is_instance_valid(world): return
+	pet.hide()
+	world.set_paused(false)
+	world.player.clear_controls()
+	_presenting_world = false
+	mode = Mode.ENTERING if _portal_time < Config.ENTER_DURATION else Mode.WORLD
+	world.player.enabled = mode == Mode.WORLD
+	_world_blurred()
+
+func _world_blurred_after_failed_activation() -> void:
+	_presenting_world = false
+	_world_blurred(true)
+
+func _resume_world() -> void:
+	var anchor := Vector2(pet.position) + pet_anchor
+	var monitor := _screen_for_anchor(anchor)
+	if not _world_screen_valid() or monitor != screen_id:
+		leave_world()
+		enter_world()
+		return
+	var snapshot: Dictionary = desktop.describe_desktop(screen_id)
+	if snapshot.has("error"):
+		_show_error(snapshot.error)
+		return
+	if is_instance_valid(settings_window): settings_window.suspend()
+	_drag_candidate = false
+	_dragging = false
+	_menu.hide()
+	_tray_menu.hide()
+	world.apply_appearance(settings.art_scale(), settings.values.astronaut.smoke)
+	if world.player.position.distance_to(anchor - screen_origin) > 1:
+		world.player.position = anchor - screen_origin
+		world.player.velocity = Vector2.ZERO
+	world.update_platforms(snapshot.platforms)
+	pet.hide()
+	_present_world()
+
+func _world_screen_valid() -> bool:
+	return screen_id < DisplayServer.get_screen_count() and DisplayServer.screen_get_size(screen_id) == _last_size and Vector2(DisplayServer.screen_get_position(screen_id)) == screen_origin
 
 func _world_input(event: InputEvent) -> void:
 	if event.is_action_pressed("leave_world"):
-		leave_world()
+		# Keep the input surface until a held mouse button is released, so its
+		# trailing release cannot open a context menu or activate the real desktop.
+		_pending_leave = true
+		world.player.clear_controls()
+		world.set_paused(true)
+		if Input.get_mouse_button_mask() == 0: leave_world()
 
-func _world_blurred() -> void:
-	if mode != Mode.WORLD:
+func _world_blurred(force: bool = false) -> void:
+	if _presenting_world or mode not in [Mode.WORLD, Mode.ENTERING] or not is_instance_valid(world):
+		return
+	if not force and world_window.visible and world_window.has_focus(): return
+	if _pending_leave:
+		leave_world()
 		return
 	mode = Mode.PAUSED
 	world.player.clear_controls()
 	world.set_paused(true)
-
-func _world_focused() -> void:
-	if mode != Mode.PAUSED:
-		return
-	world.set_paused(false)
-	world.player.clear_controls()
-	mode = Mode.WORLD
+	pet.position = Vector2i((screen_origin + world.player.position - pet_anchor).round())
+	visual.facing = world.player.visual.facing
+	visual.play("idle")
+	world_window.hide()
+	pet.show()
+	_set_window_taskbar(pet, false)
+	_update_refresh_rate()
+	_save_position()
 
 func leave_world() -> void:
 	if mode in [Mode.PET, Mode.EXITING]:
 		return
 	if not is_instance_valid(world):
 		return
+	var was_paused := mode == Mode.PAUSED
 	mode = Mode.EXITING
-	var anchor: Vector2 = screen_origin + world.player.position
+	_presentation_generation += 1
+	_presenting_world = false
+	_pending_leave = false
+	_entry_generation += 1
+	var anchor: Vector2 = Vector2(pet.position) + pet_anchor if was_paused else screen_origin + world.player.position
 	visual.facing = world.player.visual.facing
 	world.player.clear_controls()
 	world_window.hide()
@@ -329,14 +419,15 @@ func leave_world() -> void:
 func _process(delta: float) -> void:
 	if desktop.bridge != null and OS.get_name() == "macOS" and desktop.bridge.consume_reopen():
 		_set_enabled(true)
-	if mode == Mode.PET and _drag_candidate:
+	if _pending_leave and Input.get_mouse_button_mask() == 0: leave_world()
+	if mode in [Mode.PET, Mode.PAUSED] and _drag_candidate:
 		var distance := Vector2(DisplayServer.mouse_get_position()) - _drag_start
 		if distance.length() > 6:
 			_dragging = true
 		if _dragging:
 			pet.position = Vector2i(_window_start + distance)
 			_clamp_pet()
-	if mode == Mode.ENTERING and is_instance_valid(world):
+	if mode == Mode.ENTERING and is_instance_valid(world) and not _pending_leave and not _presenting_world:
 		_portal_time += delta
 		world.set_portal_progress(minf(_portal_time / Config.ENTER_DURATION, 1))
 		if _portal_time >= Config.ENTER_DURATION:
@@ -345,14 +436,21 @@ func _process(delta: float) -> void:
 			mode = Mode.WORLD
 			if not world_window.has_focus():
 				_world_blurred()
+	if mode in [Mode.ENTERING, Mode.WORLD] and not _pending_leave and is_instance_valid(world):
+		_platform_check_time += delta
+		if _platform_check_time >= 0.1:
+			_platform_check_time = 0
+			if _world_screen_valid():
+				var snapshot: Dictionary = desktop.describe_desktop(screen_id)
+				if not snapshot.has("error"): world.update_platforms(snapshot.platforms)
 	_check_time += delta
 	if _check_time >= 0.5:
 		_check_time = 0
 		if mode in [Mode.WORLD, Mode.PAUSED, Mode.ENTERING] and is_instance_valid(world):
-			if screen_id >= DisplayServer.get_screen_count() or DisplayServer.screen_get_size(screen_id) != _last_size or Vector2(DisplayServer.screen_get_position(screen_id)) != screen_origin:
+			if not _world_screen_valid():
 				leave_world()
 				_clamp_pet()
-		elif mode == Mode.PET:
+		elif mode in [Mode.PET, Mode.PAUSED]:
 			_clamp_pet()
 
 func _clamp_pet() -> void:

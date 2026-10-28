@@ -34,6 +34,7 @@ void DesktopBridge::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_window_taskbar_visible", "handle", "visible"), &DesktopBridge::set_window_taskbar_visible);
     ClassDB::bind_method(D_METHOD("set_app_dock_visible", "visible"), &DesktopBridge::set_app_dock_visible);
     ClassDB::bind_method(D_METHOD("present_menu_window", "handle"), &DesktopBridge::present_menu_window);
+    ClassDB::bind_method(D_METHOD("present_world_window", "handle"), &DesktopBridge::present_world_window);
 }
 
 #ifdef _WIN32
@@ -300,5 +301,15 @@ bool DesktopBridge::present_menu_window(int64_t handle) const {
     return mac_present_menu_window(handle);
 #else
     return false;
+#endif
+}
+
+bool DesktopBridge::present_world_window(int64_t handle) const {
+#ifdef __APPLE__
+    return mac_present_world_window(handle);
+#else
+    // Both surfaces must explicitly rise above other topmost application
+    // windows; foreground activation alone does not guarantee that ordering.
+    return present_menu_window(handle);
 #endif
 }
